@@ -1,6 +1,8 @@
 package linecache
 
 import (
+	"math"
+
 	"github.com/dshills/keystorm/internal/renderer/core"
 	"github.com/dshills/keystorm/internal/renderer/dirty"
 	"github.com/dshills/keystorm/internal/renderer/style"
@@ -109,11 +111,22 @@ func (lr *LineRenderer) RenderVisibleLines(getText func(line uint32) string) []R
 	result := make([]RenderLine, 0, lr.screenHeight)
 
 	for screenRow := 0; screenRow < lr.screenHeight; screenRow++ {
-		line := lr.topLine + uint32(screenRow)
+		// Guard against uint32 overflow
+		var line uint32
+		if lr.topLine > math.MaxUint32-uint32(screenRow) {
+			line = math.MaxUint32
+		} else {
+			line = lr.topLine + uint32(screenRow)
+		}
 		text := getText(line)
 
 		renderLine := lr.renderLine(line, screenRow, text)
 		result = append(result, renderLine)
+
+		// If we've reached max line, stop
+		if line == math.MaxUint32 {
+			break
+		}
 	}
 
 	return result
@@ -203,12 +216,22 @@ func (lr *LineRenderer) buildGutterCells(line uint32) []core.Cell {
 		}
 	}
 
-	// Format line number (1-indexed for display)
+	// Format line number (1-indexed for display), right-aligned
 	numStr := formatLineNumber(line+1, lr.gutterWidth-1)
 
-	// Fill gutter cells with line number
-	for i := 0; i < lr.gutterWidth-1 && i < len(numStr); i++ {
-		cells[i].Rune = rune(numStr[i])
+	// Fill gutter cells with line number (right-aligned)
+	// If number is longer than available width, show rightmost digits
+	availWidth := lr.gutterWidth - 1 // Reserve last cell for separator
+	startIdx := 0
+	if len(numStr) > availWidth {
+		// Truncate from left (show least-significant digits)
+		startIdx = len(numStr) - availWidth
+	}
+	visiblePart := numStr[startIdx:]
+	// Right-align: place digits at the end of the available space
+	offset := availWidth - len(visiblePart)
+	for i, r := range visiblePart {
+		cells[offset+i].Rune = r
 	}
 
 	// Separator uses base style
@@ -219,7 +242,9 @@ func (lr *LineRenderer) buildGutterCells(line uint32) []core.Cell {
 	return cells
 }
 
-// formatLineNumber formats a line number with padding.
+// formatLineNumber formats a line number with left-padding spaces.
+// Returns empty string if num is 0 (since line numbers are 1-indexed for display)
+// or if width is non-positive.
 func formatLineNumber(num uint32, width int) string {
 	if num == 0 || width <= 0 {
 		return ""
@@ -251,7 +276,18 @@ func formatLineNumber(num uint32, width int) string {
 // VisibleLineRange returns the range of visible lines.
 func (lr *LineRenderer) VisibleLineRange() (startLine, endLine uint32) {
 	startLine = lr.topLine
-	endLine = lr.topLine + uint32(lr.screenHeight) - 1
+	// Guard against uint32 overflow
+	if lr.screenHeight <= 0 {
+		endLine = lr.topLine
+		return
+	}
+	offset := uint32(lr.screenHeight - 1)
+	if lr.topLine > math.MaxUint32-offset {
+		// Would overflow, clamp to max
+		endLine = math.MaxUint32
+	} else {
+		endLine = lr.topLine + offset
+	}
 	return
 }
 

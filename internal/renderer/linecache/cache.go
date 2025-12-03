@@ -170,16 +170,24 @@ func (c *Cache) StyleResolver() *style.Resolver {
 func (c *Cache) GetLine(line uint32, text string) *CachedLine {
 	contentHash := hashContent(text)
 
-	// Check cache under read lock first
+	// Check cache under read lock first (read-only check)
 	c.mu.RLock()
 	if entry, ok := c.entries[line]; ok {
 		if entry.ContentHash == contentHash && entry.Version == c.version && !entry.LayoutOnly {
-			entry.LastAccess = time.Now()
+			// Found valid cache entry - upgrade to write lock to update LastAccess
 			c.mu.RUnlock()
 			c.mu.Lock()
-			c.hits++
+			// Re-check entry still exists and is valid after acquiring write lock
+			if entry, ok := c.entries[line]; ok {
+				if entry.ContentHash == contentHash && entry.Version == c.version && !entry.LayoutOnly {
+					entry.LastAccess = time.Now()
+					c.hits++
+					c.mu.Unlock()
+					return entry
+				}
+			}
+			// Entry was invalidated between locks, continue to compute
 			c.mu.Unlock()
-			return entry
 		}
 	}
 	// Capture state needed for computation
@@ -210,6 +218,7 @@ func (c *Cache) GetLine(line uint32, text string) *CachedLine {
 	// Double-check: entry may have been added by another goroutine
 	if entry, ok := c.entries[line]; ok {
 		if entry.ContentHash == contentHash && entry.Version == version && !entry.LayoutOnly {
+			entry.LastAccess = time.Now()
 			c.hits++
 			return entry
 		}
@@ -245,17 +254,21 @@ func (c *Cache) GetLineLayout(line uint32, text string) *layout.LineLayout {
 func (c *Cache) GetStyledCells(line uint32, text string) []core.Cell {
 	cached := c.GetLine(line, text)
 
+	// Capture selection source and resolver under lock, then release
 	c.mu.RLock()
-	defer c.mu.RUnlock()
+	selectionSrc := c.selectionSrc
+	styleResolver := c.styleResolver
+	c.mu.RUnlock()
 
-	// Apply volatile selection styling
-	if c.selectionSrc != nil {
-		selSpans := c.selectionSrc.SelectionSpansForLine(line)
+	// Apply volatile selection styling outside the lock
+	if selectionSrc != nil {
+		selSpans := selectionSrc.SelectionSpansForLine(line)
 		if len(selSpans) > 0 {
 			// Make a copy to avoid modifying cached cells
 			cells := make([]core.Cell, len(cached.Cells))
 			copy(cells, cached.Cells)
-			return c.styleResolver.ResolveLine(cells, selSpans)
+			// ResolveLine is called outside the lock (style.Resolver is thread-safe)
+			return styleResolver.ResolveLine(cells, selSpans)
 		}
 	}
 
