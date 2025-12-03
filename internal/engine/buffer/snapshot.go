@@ -154,3 +154,17 @@ func (s *Snapshot) Runes() *rope.RuneIterator {
 func (s *Snapshot) Bytes() *rope.ByteIterator {
 	return s.rope.Bytes()
 }
+
+// Rope returns the underlying rope for advanced operations.
+//
+// This is safe to expose because ropes are immutable by design: all modification
+// operations (Insert, Delete, Replace) return a new rope rather than mutating
+// the original. The returned rope will never change, even if the source buffer
+// is modified after the snapshot was created.
+//
+// This method is intentionally part of the public API for performance-critical
+// use cases such as efficient diffing between snapshots or custom iteration.
+// For most use cases, prefer the higher-level iterators (Chunks, Lines, Runes, Bytes).
+func (s *Snapshot) Rope() rope.Rope {
+	return s.rope
+}
