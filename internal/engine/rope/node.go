@@ -30,44 +30,39 @@ type Node struct {
 }
 
 // newLeafNode creates an empty leaf node.
+// Uses the default pool for efficient allocation.
 func newLeafNode() *Node {
-	return &Node{
-		height: 0,
-		chunks: make([]Chunk, 0, MaxChunksPerLeaf),
-	}
+	return DefaultPool.GetLeaf()
 }
 
 // newLeafNodeWithChunks creates a leaf node with the given chunks.
+// Uses the default pool for efficient allocation.
 func newLeafNodeWithChunks(chunks []Chunk) *Node {
-	n := &Node{
-		height: 0,
-		chunks: chunks,
-	}
+	n := DefaultPool.GetLeaf()
+	n.chunks = append(n.chunks, chunks...)
 	n.recomputeSummary()
 	return n
 }
 
 // newInternalNode creates an internal node with the given children.
+// Uses the default pool for efficient allocation.
 func newInternalNode(children []*Node) *Node {
 	if len(children) == 0 {
 		return newLeafNode()
 	}
 
 	height := children[0].height + 1
-	summaries := make([]TextSummary, len(children))
-	var total TextSummary
+	n := DefaultPool.GetInternal(height)
 
-	for i, child := range children {
-		summaries[i] = child.summary
+	var total TextSummary
+	for _, child := range children {
+		n.children = append(n.children, child)
+		n.childSummaries = append(n.childSummaries, child.summary)
 		total = total.Add(child.summary)
 	}
+	n.summary = total
 
-	return &Node{
-		height:         height,
-		summary:        total,
-		children:       children,
-		childSummaries: summaries,
-	}
+	return n
 }
 
 // IsLeaf returns true if this is a leaf node.

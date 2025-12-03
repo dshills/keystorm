@@ -127,35 +127,33 @@ func (c *Cursor) LineStartOffset() ByteOffset {
 		return 0
 	}
 
-	// Use cursor position to search within current chunk first (O(1) per byte)
+	// Use cursor position to search within current chunk first using newline index
 	if c.leafNode != nil && c.chunkIdx < len(c.leafNode.chunks) {
 		chunk := c.leafNode.chunks[c.chunkIdx]
-		text := chunk.String()
+		newlines := chunk.Newlines()
 
-		// Search backward within current chunk
-		for i := c.chunkOff - 1; i >= 0; i-- {
-			if text[i] == '\n' {
-				// Calculate absolute offset of this position
-				chunkStart := c.offset - ByteOffset(c.chunkOff)
-				return chunkStart + ByteOffset(i) + 1
-			}
+		// Use newline index for O(1) lookup within chunk
+		pos := newlines.NewlineBefore(c.chunkOff)
+		if pos >= 0 {
+			// Found newline in current chunk
+			chunkStart := c.offset - ByteOffset(c.chunkOff)
+			return chunkStart + ByteOffset(pos) + 1
 		}
 
 		// Not found in current chunk - need to search earlier chunks/leaves
 		// Calculate offset at start of current chunk
 		chunkStart := c.offset - ByteOffset(c.chunkOff)
 
-		// Search earlier chunks in current leaf
+		// Search earlier chunks in current leaf using newline index
 		for i := c.chunkIdx - 1; i >= 0; i-- {
 			prevChunk := c.leafNode.chunks[i]
-			prevText := prevChunk.String()
-			chunkStart -= ByteOffset(len(prevText))
+			chunkStart -= ByteOffset(prevChunk.Len())
 
-			// Search backward in this chunk
-			for j := len(prevText) - 1; j >= 0; j-- {
-				if prevText[j] == '\n' {
-					return chunkStart + ByteOffset(j) + 1
-				}
+			// Use newline index to find last newline in this chunk
+			prevNewlines := prevChunk.Newlines()
+			lastPos := prevNewlines.LastNewlinePosition()
+			if lastPos >= 0 {
+				return chunkStart + ByteOffset(lastPos) + 1
 			}
 		}
 
@@ -374,10 +372,10 @@ func (c *Cursor) SeekLine(line uint32) bool {
 	for i, chunk := range node.chunks {
 		summary := chunk.Summary()
 		if summary.Lines >= remainingLines {
-			// Target line is in this chunk
+			// Target line is in this chunk - use the newline index for O(1) lookup
 			c.chunkIdx = i
-			text := chunk.String()
-			pos := findNthNewline(text, remainingLines)
+			newlines := chunk.Newlines()
+			pos := newlines.FindNthNewline(remainingLines)
 			if pos < 0 {
 				// Newline not found where expected - this shouldn't happen
 				// if summaries are correct, but handle gracefully

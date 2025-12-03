@@ -15,16 +15,18 @@ const (
 // Chunk represents a bounded string stored in leaf nodes.
 // Chunks are immutable once created.
 type Chunk struct {
-	data    string      // The actual text (immutable)
-	summary TextSummary // Precomputed metrics
+	data     string       // The actual text (immutable)
+	summary  TextSummary  // Precomputed metrics
+	newlines NewlineIndex // Cached newline positions for fast line seeking
 }
 
 // NewChunk creates a chunk from a string.
-// Computes summary metrics eagerly.
+// Computes summary metrics and newline index eagerly.
 func NewChunk(s string) Chunk {
 	return Chunk{
-		data:    s,
-		summary: ComputeSummary(s),
+		data:     s,
+		summary:  ComputeSummary(s),
+		newlines: ComputeNewlineIndex(s),
 	}
 }
 
@@ -36,6 +38,12 @@ func (c Chunk) String() string {
 // Summary returns the chunk's precomputed metrics.
 func (c Chunk) Summary() TextSummary {
 	return c.summary
+}
+
+// Newlines returns the chunk's newline index for fast line seeking.
+// Returns by value to maintain Chunk's immutability guarantees.
+func (c Chunk) Newlines() NewlineIndex {
+	return c.newlines
 }
 
 // Len returns the byte length of the chunk.
