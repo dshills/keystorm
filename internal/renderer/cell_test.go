@@ -205,18 +205,18 @@ func TestContinuationCell(t *testing.T) {
 	}
 }
 
-func TestIsWideRune(t *testing.T) {
+func TestWideRuneWidth(t *testing.T) {
 	wideRunes := []rune{'中', '日', '韓', '한', 'あ', 'ア', 'Ａ', 'ａ', '１'}
 	for _, r := range wideRunes {
-		if !isWideRune(r) {
-			t.Errorf("expected %q to be wide", r)
+		if RuneWidth(r) != 2 {
+			t.Errorf("expected %q to be wide (width 2), got %d", r, RuneWidth(r))
 		}
 	}
 
 	narrowRunes := []rune{'A', 'z', '1', ' ', '@', 'α', 'é'}
 	for _, r := range narrowRunes {
-		if isWideRune(r) {
-			t.Errorf("expected %q to be narrow", r)
+		if RuneWidth(r) != 1 {
+			t.Errorf("expected %q to be narrow (width 1), got %d", r, RuneWidth(r))
 		}
 	}
 }

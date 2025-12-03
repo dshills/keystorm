@@ -3,7 +3,7 @@ package backend
 import (
 	"sync"
 
-	"github.com/dshills/keystorm/internal/renderer"
+	"github.com/dshills/keystorm/internal/renderer/core"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -61,7 +61,7 @@ func (t *Terminal) OnResize(callback func(width, height int)) {
 	t.resizeHandler = callback
 }
 
-func (t *Terminal) SetCell(x, y int, cell renderer.Cell) {
+func (t *Terminal) SetCell(x, y int, cell core.Cell) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -69,19 +69,19 @@ func (t *Terminal) SetCell(x, y int, cell renderer.Cell) {
 	t.screen.SetContent(x, y, cell.Rune, nil, style)
 }
 
-func (t *Terminal) GetCell(x, y int) renderer.Cell {
+func (t *Terminal) GetCell(x, y int) core.Cell {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	mainc, _, style, _ := t.screen.GetContent(x, y)
-	return renderer.Cell{
+	return core.Cell{
 		Rune:  mainc,
-		Width: renderer.RuneWidth(mainc),
+		Width: core.RuneWidth(mainc),
 		Style: convertTcellStyle(style),
 	}
 }
 
-func (t *Terminal) Fill(rect renderer.ScreenRect, cell renderer.Cell) {
+func (t *Terminal) Fill(rect core.ScreenRect, cell core.Cell) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -215,7 +215,7 @@ func (t *Terminal) Resume() error {
 }
 
 // convertStyle converts our Style to tcell.Style.
-func convertStyle(s renderer.Style) tcell.Style {
+func convertStyle(s core.Style) tcell.Style {
 	style := tcell.StyleDefault
 
 	// Convert foreground
@@ -237,25 +237,25 @@ func convertStyle(s renderer.Style) tcell.Style {
 	}
 
 	// Convert attributes
-	if s.Attributes.Has(renderer.AttrBold) {
+	if s.Attributes.Has(core.AttrBold) {
 		style = style.Bold(true)
 	}
-	if s.Attributes.Has(renderer.AttrDim) {
+	if s.Attributes.Has(core.AttrDim) {
 		style = style.Dim(true)
 	}
-	if s.Attributes.Has(renderer.AttrItalic) {
+	if s.Attributes.Has(core.AttrItalic) {
 		style = style.Italic(true)
 	}
-	if s.Attributes.Has(renderer.AttrUnderline) {
+	if s.Attributes.Has(core.AttrUnderline) {
 		style = style.Underline(true)
 	}
-	if s.Attributes.Has(renderer.AttrBlink) {
+	if s.Attributes.Has(core.AttrBlink) {
 		style = style.Blink(true)
 	}
-	if s.Attributes.Has(renderer.AttrReverse) {
+	if s.Attributes.Has(core.AttrReverse) {
 		style = style.Reverse(true)
 	}
-	if s.Attributes.Has(renderer.AttrStrikethrough) {
+	if s.Attributes.Has(core.AttrStrikethrough) {
 		style = style.StrikeThrough(true)
 	}
 
@@ -263,54 +263,54 @@ func convertStyle(s renderer.Style) tcell.Style {
 }
 
 // convertTcellStyle converts tcell.Style back to our Style.
-func convertTcellStyle(ts tcell.Style) renderer.Style {
+func convertTcellStyle(ts tcell.Style) core.Style {
 	fg, bg, attrs := ts.Decompose()
 
-	s := renderer.Style{
+	s := core.Style{
 		Foreground: convertTcellColor(fg),
 		Background: convertTcellColor(bg),
-		Attributes: renderer.AttrNone,
+		Attributes: core.AttrNone,
 	}
 
 	if attrs&tcell.AttrBold != 0 {
-		s.Attributes |= renderer.AttrBold
+		s.Attributes |= core.AttrBold
 	}
 	if attrs&tcell.AttrDim != 0 {
-		s.Attributes |= renderer.AttrDim
+		s.Attributes |= core.AttrDim
 	}
 	if attrs&tcell.AttrItalic != 0 {
-		s.Attributes |= renderer.AttrItalic
+		s.Attributes |= core.AttrItalic
 	}
 	if attrs&tcell.AttrUnderline != 0 {
-		s.Attributes |= renderer.AttrUnderline
+		s.Attributes |= core.AttrUnderline
 	}
 	if attrs&tcell.AttrBlink != 0 {
-		s.Attributes |= renderer.AttrBlink
+		s.Attributes |= core.AttrBlink
 	}
 	if attrs&tcell.AttrReverse != 0 {
-		s.Attributes |= renderer.AttrReverse
+		s.Attributes |= core.AttrReverse
 	}
 	if attrs&tcell.AttrStrikeThrough != 0 {
-		s.Attributes |= renderer.AttrStrikethrough
+		s.Attributes |= core.AttrStrikethrough
 	}
 
 	return s
 }
 
 // convertTcellColor converts tcell.Color to our Color.
-func convertTcellColor(tc tcell.Color) renderer.Color {
+func convertTcellColor(tc tcell.Color) core.Color {
 	if tc == tcell.ColorDefault {
-		return renderer.ColorDefault
+		return core.ColorDefault
 	}
 
 	// Check if it's a palette color
 	if tc >= tcell.ColorValid && tc < tcell.ColorIsRGB {
-		return renderer.ColorFromIndex(uint8(tc - tcell.ColorValid))
+		return core.ColorFromIndex(uint8(tc - tcell.ColorValid))
 	}
 
 	// True color
 	r, g, b := tc.RGB()
-	return renderer.ColorFromRGB(uint8(r>>8), uint8(g>>8), uint8(b>>8))
+	return core.ColorFromRGB(uint8(r>>8), uint8(g>>8), uint8(b>>8))
 }
 
 // convertEvent converts tcell events to our Event type.

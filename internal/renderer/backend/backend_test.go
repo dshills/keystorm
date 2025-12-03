@@ -3,7 +3,7 @@ package backend
 import (
 	"testing"
 
-	"github.com/dshills/keystorm/internal/renderer"
+	"github.com/dshills/keystorm/internal/renderer/core"
 )
 
 func TestNullBackendInit(t *testing.T) {
@@ -22,7 +22,7 @@ func TestNullBackendSetGetCell(t *testing.T) {
 	b := NewNullBackend(80, 24)
 	b.Init()
 
-	cell := renderer.NewStyledCell('X', renderer.DefaultStyle().WithForeground(renderer.ColorRed))
+	cell := core.NewStyledCell('X', core.DefaultStyle().WithForeground(core.ColorRed))
 	b.SetCell(10, 5, cell)
 
 	got := b.GetCell(10, 5)
@@ -35,7 +35,7 @@ func TestNullBackendSetGetCell(t *testing.T) {
 	b.SetCell(100, 0, cell)
 
 	empty := b.GetCell(-1, 0)
-	if !empty.Equals(renderer.EmptyCell()) {
+	if !empty.Equals(core.EmptyCell()) {
 		t.Error("out of bounds should return empty cell")
 	}
 }
@@ -44,8 +44,8 @@ func TestNullBackendFill(t *testing.T) {
 	b := NewNullBackend(80, 24)
 	b.Init()
 
-	cell := renderer.NewCell('.')
-	rect := renderer.NewScreenRect(5, 10, 10, 20)
+	cell := core.NewCell('.')
+	rect := core.NewScreenRect(5, 10, 10, 20)
 	b.Fill(rect, cell)
 
 	// Check inside rect
@@ -66,14 +66,14 @@ func TestNullBackendClear(t *testing.T) {
 	b.Init()
 
 	// Set some cells
-	b.SetCell(10, 10, renderer.NewCell('X'))
-	b.SetCell(20, 20, renderer.NewCell('Y'))
+	b.SetCell(10, 10, core.NewCell('X'))
+	b.SetCell(20, 20, core.NewCell('Y'))
 
 	b.Clear()
 
 	// All cells should be empty
 	got := b.GetCell(10, 10)
-	if !got.Equals(renderer.EmptyCell()) {
+	if !got.Equals(core.EmptyCell()) {
 		t.Error("clear should reset all cells")
 	}
 }

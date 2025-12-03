@@ -3,7 +3,7 @@ package backend
 import (
 	"testing"
 
-	"github.com/dshills/keystorm/internal/renderer"
+	"github.com/dshills/keystorm/internal/renderer/core"
 )
 
 func TestNewScreenBuffer(t *testing.T) {
@@ -18,7 +18,7 @@ func TestNewScreenBuffer(t *testing.T) {
 func TestScreenBufferSetGetCell(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
-	cell := renderer.NewStyledCell('A', renderer.DefaultStyle().WithForeground(renderer.ColorBlue))
+	cell := core.NewStyledCell('A', core.DefaultStyle().WithForeground(core.ColorBlue))
 	sb.SetCell(10, 5, cell)
 
 	got := sb.GetCell(10, 5)
@@ -31,7 +31,7 @@ func TestScreenBufferSetGetCell(t *testing.T) {
 	sb.SetCell(100, 0, cell)
 
 	empty := sb.GetCell(-1, 0)
-	if !empty.Equals(renderer.EmptyCell()) {
+	if !empty.Equals(core.EmptyCell()) {
 		t.Error("out of bounds should return empty cell")
 	}
 }
@@ -39,8 +39,8 @@ func TestScreenBufferSetGetCell(t *testing.T) {
 func TestScreenBufferFill(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
-	cell := renderer.NewCell('#')
-	rect := renderer.NewScreenRect(5, 10, 15, 30)
+	cell := core.NewCell('#')
+	rect := core.NewScreenRect(5, 10, 15, 30)
 	sb.Fill(rect, cell)
 
 	// Inside rect
@@ -57,11 +57,11 @@ func TestScreenBufferFill(t *testing.T) {
 func TestScreenBufferClear(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
-	sb.SetCell(10, 10, renderer.NewCell('X'))
+	sb.SetCell(10, 10, core.NewCell('X'))
 	sb.Clear()
 
 	got := sb.GetCell(10, 10)
-	if !got.Equals(renderer.EmptyCell()) {
+	if !got.Equals(core.EmptyCell()) {
 		t.Error("clear should reset all cells")
 	}
 }
@@ -70,20 +70,20 @@ func TestScreenBufferClearRegion(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
 	// Fill everything
-	sb.Fill(renderer.NewScreenRect(0, 0, 24, 80), renderer.NewCell('X'))
+	sb.Fill(core.NewScreenRect(0, 0, 24, 80), core.NewCell('X'))
 
 	// Clear a region
-	sb.ClearRegion(renderer.NewScreenRect(5, 10, 15, 30))
+	sb.ClearRegion(core.NewScreenRect(5, 10, 15, 30))
 
 	// Inside cleared region
 	got := sb.GetCell(20, 10)
-	if !got.Equals(renderer.EmptyCell()) {
+	if !got.Equals(core.EmptyCell()) {
 		t.Error("cleared region should have empty cells")
 	}
 
 	// Outside cleared region
 	got = sb.GetCell(0, 0)
-	if got.Equals(renderer.EmptyCell()) {
+	if got.Equals(core.EmptyCell()) {
 		t.Error("outside cleared region should still have filled cells")
 	}
 }
@@ -91,10 +91,10 @@ func TestScreenBufferClearRegion(t *testing.T) {
 func TestScreenBufferSetLine(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
-	cells := []renderer.Cell{
-		renderer.NewCell('H'),
-		renderer.NewCell('i'),
-		renderer.NewCell('!'),
+	cells := []core.Cell{
+		core.NewCell('H'),
+		core.NewCell('i'),
+		core.NewCell('!'),
 	}
 	sb.SetLine(10, 5, cells)
 
@@ -112,14 +112,14 @@ func TestScreenBufferSetLine(t *testing.T) {
 func TestScreenBufferSetString(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
-	style := renderer.DefaultStyle().WithForeground(renderer.ColorGreen)
+	style := core.DefaultStyle().WithForeground(core.ColorGreen)
 	sb.SetString(5, 10, "Hello", style)
 
 	got := sb.GetCell(5, 10)
 	if got.Rune != 'H' {
 		t.Errorf("expected 'H', got %q", got.Rune)
 	}
-	if !got.Style.Foreground.Equals(renderer.ColorGreen) {
+	if !got.Style.Foreground.Equals(core.ColorGreen) {
 		t.Error("style should be green")
 	}
 }
@@ -127,7 +127,7 @@ func TestScreenBufferSetString(t *testing.T) {
 func TestScreenBufferSetStringWithWideChars(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
-	style := renderer.DefaultStyle()
+	style := core.DefaultStyle()
 	sb.SetString(0, 0, "A中B", style)
 
 	// A at 0
@@ -149,7 +149,7 @@ func TestScreenBufferSetStringWithWideChars(t *testing.T) {
 
 func TestScreenBufferResize(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
-	sb.SetCell(10, 10, renderer.NewCell('X'))
+	sb.SetCell(10, 10, core.NewCell('X'))
 
 	sb.Resize(100, 40)
 
@@ -167,8 +167,8 @@ func TestScreenBufferResize(t *testing.T) {
 
 func TestScreenBufferResizeSmallerPreserves(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
-	sb.SetCell(10, 10, renderer.NewCell('X'))
-	sb.SetCell(70, 20, renderer.NewCell('Y'))
+	sb.SetCell(10, 10, core.NewCell('X'))
+	sb.SetCell(70, 20, core.NewCell('Y'))
 
 	sb.Resize(50, 15)
 
@@ -198,7 +198,7 @@ func TestScreenBufferDirtyTracking(t *testing.T) {
 		t.Error("buffer should be clean after sync")
 	}
 
-	sb.SetCell(10, 5, renderer.NewCell('A'))
+	sb.SetCell(10, 5, core.NewCell('A'))
 	if !sb.IsDirty() {
 		t.Error("buffer should be dirty after SetCell")
 	}
@@ -218,7 +218,7 @@ func TestScreenBufferMarkRegionDirty(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 	sb.Sync()
 
-	sb.MarkRegionDirty(renderer.NewScreenRect(5, 10, 15, 30))
+	sb.MarkRegionDirty(core.NewScreenRect(5, 10, 15, 30))
 	if !sb.IsDirty() {
 		t.Error("buffer should be dirty after MarkRegionDirty")
 	}
@@ -244,8 +244,8 @@ func TestScreenBufferComputeDiff(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 	sb.Sync()
 
-	sb.SetCell(10, 5, renderer.NewCell('A'))
-	sb.SetCell(20, 10, renderer.NewCell('B'))
+	sb.SetCell(10, 5, core.NewCell('A'))
+	sb.SetCell(20, 10, core.NewCell('B'))
 
 	diff := sb.ComputeDiff()
 	if len(diff) != 2 {
@@ -258,11 +258,11 @@ func TestScreenBufferComputeDiffSkipsUnchanged(t *testing.T) {
 	sb.Sync()
 
 	// Set and sync
-	sb.SetCell(10, 5, renderer.NewCell('A'))
+	sb.SetCell(10, 5, core.NewCell('A'))
 	sb.Sync()
 
 	// Set same value
-	sb.SetCell(10, 5, renderer.NewCell('A'))
+	sb.SetCell(10, 5, core.NewCell('A'))
 
 	diff := sb.ComputeDiff()
 	if len(diff) != 0 {
@@ -273,7 +273,7 @@ func TestScreenBufferComputeDiffSkipsUnchanged(t *testing.T) {
 func TestScreenBufferSync(t *testing.T) {
 	sb := NewScreenBuffer(80, 24)
 
-	sb.SetCell(10, 5, renderer.NewCell('X'))
+	sb.SetCell(10, 5, core.NewCell('X'))
 	sb.Sync()
 
 	// Front buffer should now have the cell
@@ -307,7 +307,7 @@ func TestBufferedBackendSetCell(t *testing.T) {
 	buffered := NewBufferedBackend(nullBackend)
 	buffered.Init()
 
-	cell := renderer.NewCell('X')
+	cell := core.NewCell('X')
 	buffered.SetCell(10, 5, cell)
 
 	// Before Show, underlying backend should not have the cell
@@ -331,11 +331,11 @@ func TestBufferedBackendMinimalUpdates(t *testing.T) {
 	buffered.Init()
 
 	// Fill everything and show
-	buffered.Fill(renderer.NewScreenRect(0, 0, 24, 80), renderer.NewCell('.'))
+	buffered.Fill(core.NewScreenRect(0, 0, 24, 80), core.NewCell('.'))
 	buffered.Show()
 
 	// Change one cell
-	buffered.SetCell(10, 5, renderer.NewCell('X'))
+	buffered.SetCell(10, 5, core.NewCell('X'))
 
 	// Compute diff should only have 1 change
 	diff := buffered.Buffer().ComputeDiff()
@@ -368,7 +368,7 @@ func TestBufferedBackendSetString(t *testing.T) {
 	buffered := NewBufferedBackend(nullBackend)
 	buffered.Init()
 
-	style := renderer.DefaultStyle().WithForeground(renderer.ColorRed)
+	style := core.DefaultStyle().WithForeground(core.ColorRed)
 	buffered.SetString(5, 10, "Test", style)
 	buffered.Show()
 

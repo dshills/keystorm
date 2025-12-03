@@ -1,7 +1,7 @@
 package backend
 
 import (
-	"github.com/dshills/keystorm/internal/renderer"
+	"github.com/dshills/keystorm/internal/renderer/core"
 )
 
 // ScreenBuffer provides double-buffered rendering with change tracking.
@@ -9,8 +9,8 @@ import (
 // On sync, it computes the diff and only updates changed cells.
 type ScreenBuffer struct {
 	width, height int
-	front         [][]renderer.Cell
-	back          [][]renderer.Cell
+	front         [][]core.Cell
+	back          [][]core.Cell
 	dirty         [][]bool
 	fullRedraw    bool
 }
@@ -28,18 +28,18 @@ func NewScreenBuffer(width, height int) *ScreenBuffer {
 
 // allocate creates the internal buffers.
 func (sb *ScreenBuffer) allocate() {
-	sb.front = make([][]renderer.Cell, sb.height)
-	sb.back = make([][]renderer.Cell, sb.height)
+	sb.front = make([][]core.Cell, sb.height)
+	sb.back = make([][]core.Cell, sb.height)
 	sb.dirty = make([][]bool, sb.height)
 
 	for y := 0; y < sb.height; y++ {
-		sb.front[y] = make([]renderer.Cell, sb.width)
-		sb.back[y] = make([]renderer.Cell, sb.width)
+		sb.front[y] = make([]core.Cell, sb.width)
+		sb.back[y] = make([]core.Cell, sb.width)
 		sb.dirty[y] = make([]bool, sb.width)
 
 		for x := 0; x < sb.width; x++ {
-			sb.front[y][x] = renderer.EmptyCell()
-			sb.back[y][x] = renderer.EmptyCell()
+			sb.front[y][x] = core.EmptyCell()
+			sb.back[y][x] = core.EmptyCell()
 		}
 	}
 }
@@ -76,7 +76,7 @@ func (sb *ScreenBuffer) Size() (width, height int) {
 }
 
 // SetCell sets a cell in the back buffer.
-func (sb *ScreenBuffer) SetCell(x, y int, cell renderer.Cell) {
+func (sb *ScreenBuffer) SetCell(x, y int, cell core.Cell) {
 	if x < 0 || x >= sb.width || y < 0 || y >= sb.height {
 		return
 	}
@@ -85,23 +85,23 @@ func (sb *ScreenBuffer) SetCell(x, y int, cell renderer.Cell) {
 }
 
 // GetCell returns a cell from the back buffer.
-func (sb *ScreenBuffer) GetCell(x, y int) renderer.Cell {
+func (sb *ScreenBuffer) GetCell(x, y int) core.Cell {
 	if x < 0 || x >= sb.width || y < 0 || y >= sb.height {
-		return renderer.EmptyCell()
+		return core.EmptyCell()
 	}
 	return sb.back[y][x]
 }
 
 // GetFrontCell returns a cell from the front buffer (currently displayed).
-func (sb *ScreenBuffer) GetFrontCell(x, y int) renderer.Cell {
+func (sb *ScreenBuffer) GetFrontCell(x, y int) core.Cell {
 	if x < 0 || x >= sb.width || y < 0 || y >= sb.height {
-		return renderer.EmptyCell()
+		return core.EmptyCell()
 	}
 	return sb.front[y][x]
 }
 
 // Fill fills a rectangle with the given cell.
-func (sb *ScreenBuffer) Fill(rect renderer.ScreenRect, cell renderer.Cell) {
+func (sb *ScreenBuffer) Fill(rect core.ScreenRect, cell core.Cell) {
 	for y := rect.Top; y < rect.Bottom && y < sb.height; y++ {
 		for x := rect.Left; x < rect.Right && x < sb.width; x++ {
 			if x >= 0 && y >= 0 {
@@ -114,7 +114,7 @@ func (sb *ScreenBuffer) Fill(rect renderer.ScreenRect, cell renderer.Cell) {
 
 // Clear clears the back buffer with empty cells.
 func (sb *ScreenBuffer) Clear() {
-	empty := renderer.EmptyCell()
+	empty := core.EmptyCell()
 	for y := 0; y < sb.height; y++ {
 		for x := 0; x < sb.width; x++ {
 			sb.back[y][x] = empty
@@ -124,12 +124,12 @@ func (sb *ScreenBuffer) Clear() {
 }
 
 // ClearRegion clears a rectangular region.
-func (sb *ScreenBuffer) ClearRegion(rect renderer.ScreenRect) {
-	sb.Fill(rect, renderer.EmptyCell())
+func (sb *ScreenBuffer) ClearRegion(rect core.ScreenRect) {
+	sb.Fill(rect, core.EmptyCell())
 }
 
 // SetLine sets a row of cells starting at the given position.
-func (sb *ScreenBuffer) SetLine(x, y int, cells []renderer.Cell) {
+func (sb *ScreenBuffer) SetLine(x, y int, cells []core.Cell) {
 	if y < 0 || y >= sb.height {
 		return
 	}
@@ -143,7 +143,7 @@ func (sb *ScreenBuffer) SetLine(x, y int, cells []renderer.Cell) {
 }
 
 // SetString writes a string with the given style starting at the position.
-func (sb *ScreenBuffer) SetString(x, y int, s string, style renderer.Style) {
+func (sb *ScreenBuffer) SetString(x, y int, s string, style core.Style) {
 	if y < 0 || y >= sb.height {
 		return
 	}
@@ -157,8 +157,8 @@ func (sb *ScreenBuffer) SetString(x, y int, s string, style renderer.Style) {
 			break
 		}
 
-		width := renderer.RuneWidth(r)
-		sb.back[y][col] = renderer.Cell{
+		width := core.RuneWidth(r)
+		sb.back[y][col] = core.Cell{
 			Rune:  r,
 			Width: width,
 			Style: style,
@@ -168,7 +168,7 @@ func (sb *ScreenBuffer) SetString(x, y int, s string, style renderer.Style) {
 
 		// Handle wide characters
 		if width == 2 && col < sb.width {
-			sb.back[y][col] = renderer.ContinuationCell()
+			sb.back[y][col] = core.ContinuationCell()
 			sb.dirty[y][col] = true
 			col++
 		}
@@ -178,7 +178,7 @@ func (sb *ScreenBuffer) SetString(x, y int, s string, style renderer.Style) {
 // DiffChange represents a cell change for synchronization.
 type DiffChange struct {
 	X, Y int
-	Cell renderer.Cell
+	Cell core.Cell
 }
 
 // ComputeDiff returns the changes needed to update the display.
@@ -223,7 +223,7 @@ func (sb *ScreenBuffer) MarkDirty(x, y int) {
 }
 
 // MarkRegionDirty marks a rectangular region as dirty.
-func (sb *ScreenBuffer) MarkRegionDirty(rect renderer.ScreenRect) {
+func (sb *ScreenBuffer) MarkRegionDirty(rect core.ScreenRect) {
 	for y := rect.Top; y < rect.Bottom && y < sb.height; y++ {
 		for x := rect.Left; x < rect.Right && x < sb.width; x++ {
 			if x >= 0 && y >= 0 {
@@ -311,15 +311,15 @@ func (b *BufferedBackend) OnResize(callback func(width, height int)) {
 	})
 }
 
-func (b *BufferedBackend) SetCell(x, y int, cell renderer.Cell) {
+func (b *BufferedBackend) SetCell(x, y int, cell core.Cell) {
 	b.buffer.SetCell(x, y, cell)
 }
 
-func (b *BufferedBackend) GetCell(x, y int) renderer.Cell {
+func (b *BufferedBackend) GetCell(x, y int) core.Cell {
 	return b.buffer.GetCell(x, y)
 }
 
-func (b *BufferedBackend) Fill(rect renderer.ScreenRect, cell renderer.Cell) {
+func (b *BufferedBackend) Fill(rect core.ScreenRect, cell core.Cell) {
 	b.buffer.Fill(rect, cell)
 }
 
@@ -395,12 +395,12 @@ func (b *BufferedBackend) Buffer() *ScreenBuffer {
 }
 
 // SetString is a convenience method to write a string.
-func (b *BufferedBackend) SetString(x, y int, s string, style renderer.Style) {
+func (b *BufferedBackend) SetString(x, y int, s string, style core.Style) {
 	b.buffer.SetString(x, y, s, style)
 }
 
 // SetLine is a convenience method to write a line of cells.
-func (b *BufferedBackend) SetLine(x, y int, cells []renderer.Cell) {
+func (b *BufferedBackend) SetLine(x, y int, cells []core.Cell) {
 	b.buffer.SetLine(x, y, cells)
 }
 
@@ -410,7 +410,7 @@ func (b *BufferedBackend) MarkDirty(x, y int) {
 }
 
 // MarkRegionDirty marks a region as needing redraw.
-func (b *BufferedBackend) MarkRegionDirty(rect renderer.ScreenRect) {
+func (b *BufferedBackend) MarkRegionDirty(rect core.ScreenRect) {
 	b.buffer.MarkRegionDirty(rect)
 }
 

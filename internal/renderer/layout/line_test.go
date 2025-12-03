@@ -3,7 +3,7 @@ package layout
 import (
 	"testing"
 
-	"github.com/dshills/keystorm/internal/renderer"
+	"github.com/dshills/keystorm/internal/renderer/core"
 )
 
 func TestNewLayoutEngine(t *testing.T) {
@@ -309,7 +309,7 @@ func TestLayoutCellsForRow(t *testing.T) {
 
 func TestLayoutWithStyle(t *testing.T) {
 	e := NewLayoutEngine(4)
-	style := renderer.DefaultStyle().WithForeground(renderer.ColorRed)
+	style := core.DefaultStyle().WithForeground(core.ColorRed)
 
 	layout := e.LayoutWithStyle("Hi", 0, style)
 
@@ -318,7 +318,7 @@ func TestLayoutWithStyle(t *testing.T) {
 	}
 
 	for i, cell := range layout.Cells {
-		if !cell.Style.Foreground.Equals(renderer.ColorRed) {
+		if !cell.Style.Foreground.Equals(core.ColorRed) {
 			t.Errorf("cell %d should have red foreground", i)
 		}
 	}
@@ -328,26 +328,26 @@ func TestLayoutApplyStyles(t *testing.T) {
 	e := NewLayoutEngine(4)
 	layout := e.Layout("Hello", 0)
 
-	spans := []renderer.StyleSpan{
+	spans := []core.StyleSpan{
 		{
 			StartCol: 0,
 			EndCol:   2,
-			Style:    renderer.DefaultStyle().WithForeground(renderer.ColorRed),
+			Style:    core.DefaultStyle().WithForeground(core.ColorRed),
 		},
 		{
 			StartCol: 3,
 			EndCol:   5,
-			Style:    renderer.DefaultStyle().WithForeground(renderer.ColorBlue),
+			Style:    core.DefaultStyle().WithForeground(core.ColorBlue),
 		},
 	}
 
 	e.ApplyStyles(layout, spans)
 
 	// First two cells should be red
-	if !layout.Cells[0].Style.Foreground.Equals(renderer.ColorRed) {
+	if !layout.Cells[0].Style.Foreground.Equals(core.ColorRed) {
 		t.Error("cell 0 should be red")
 	}
-	if !layout.Cells[1].Style.Foreground.Equals(renderer.ColorRed) {
+	if !layout.Cells[1].Style.Foreground.Equals(core.ColorRed) {
 		t.Error("cell 1 should be red")
 	}
 
@@ -357,10 +357,10 @@ func TestLayoutApplyStyles(t *testing.T) {
 	}
 
 	// Last two cells should be blue
-	if !layout.Cells[3].Style.Foreground.Equals(renderer.ColorBlue) {
+	if !layout.Cells[3].Style.Foreground.Equals(core.ColorBlue) {
 		t.Error("cell 3 should be blue")
 	}
-	if !layout.Cells[4].Style.Foreground.Equals(renderer.ColorBlue) {
+	if !layout.Cells[4].Style.Foreground.Equals(core.ColorBlue) {
 		t.Error("cell 4 should be blue")
 	}
 }

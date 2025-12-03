@@ -2,7 +2,7 @@
 package layout
 
 import (
-	"github.com/dshills/keystorm/internal/renderer"
+	"github.com/dshills/keystorm/internal/renderer/core"
 )
 
 // LineLayout represents the visual layout of a single buffer line.
@@ -11,7 +11,7 @@ type LineLayout struct {
 	BufferLine uint32 // The buffer line number (0-indexed)
 
 	// Visual representation
-	Cells []renderer.Cell // Visual cells (after tab expansion, etc.)
+	Cells []core.Cell // Visual cells (after tab expansion, etc.)
 
 	// Column mappings for cursor positioning
 	VisualCols []uint32 // Map visual column -> buffer column
@@ -105,7 +105,7 @@ func (l *LineLayout) RowEndColumn(row int) int {
 }
 
 // CellsForRow returns the cells for a specific wrapped row.
-func (l *LineLayout) CellsForRow(row int) []renderer.Cell {
+func (l *LineLayout) CellsForRow(row int) []core.Cell {
 	start := l.RowStartColumn(row)
 	end := l.RowEndColumn(row)
 	if start >= len(l.Cells) {
@@ -173,7 +173,7 @@ func (e *LayoutEngine) SetWrap(width int, atWord bool) {
 func (e *LayoutEngine) Layout(line string, bufferLine uint32) *LineLayout {
 	layout := &LineLayout{
 		BufferLine: bufferLine,
-		Cells:      make([]renderer.Cell, 0, len(line)),
+		Cells:      make([]core.Cell, 0, len(line)),
 		VisualCols: make([]uint32, 0, len(line)*2), // May grow for tabs/wide
 		BufferCols: make([]uint32, 0, len(line)),
 		RowCount:   1,
@@ -181,7 +181,7 @@ func (e *LayoutEngine) Layout(line string, bufferLine uint32) *LineLayout {
 
 	visCol := 0
 	bufCol := uint32(0)
-	defaultStyle := renderer.DefaultStyle()
+	defaultStyle := core.DefaultStyle()
 
 	for _, r := range line {
 		// Record buffer -> visual mapping at start of each character
@@ -194,7 +194,7 @@ func (e *LayoutEngine) Layout(line string, bufferLine uint32) *LineLayout {
 			layout.HasTabs = true
 			tabStop := e.tabWidth - (visCol % e.tabWidth)
 			for i := 0; i < tabStop; i++ {
-				layout.Cells = append(layout.Cells, renderer.Cell{
+				layout.Cells = append(layout.Cells, core.Cell{
 					Rune:  ' ',
 					Width: 1,
 					Style: defaultStyle,
@@ -204,7 +204,7 @@ func (e *LayoutEngine) Layout(line string, bufferLine uint32) *LineLayout {
 			}
 		} else {
 			// Regular character
-			width := renderer.RuneWidth(r)
+			width := core.RuneWidth(r)
 			if width == 2 {
 				layout.HasWide = true
 			}
@@ -215,7 +215,7 @@ func (e *LayoutEngine) Layout(line string, bufferLine uint32) *LineLayout {
 				continue
 			}
 
-			layout.Cells = append(layout.Cells, renderer.Cell{
+			layout.Cells = append(layout.Cells, core.Cell{
 				Rune:  r,
 				Width: width,
 				Style: defaultStyle,
@@ -225,7 +225,7 @@ func (e *LayoutEngine) Layout(line string, bufferLine uint32) *LineLayout {
 
 			// For wide characters, add continuation cell
 			if width == 2 {
-				layout.Cells = append(layout.Cells, renderer.ContinuationCell())
+				layout.Cells = append(layout.Cells, core.ContinuationCell())
 				layout.VisualCols = append(layout.VisualCols, bufCol)
 				visCol++
 			}
@@ -246,7 +246,7 @@ func (e *LayoutEngine) Layout(line string, bufferLine uint32) *LineLayout {
 }
 
 // LayoutWithStyle computes the visual layout for a line with a base style.
-func (e *LayoutEngine) LayoutWithStyle(line string, bufferLine uint32, style renderer.Style) *LineLayout {
+func (e *LayoutEngine) LayoutWithStyle(line string, bufferLine uint32, style core.Style) *LineLayout {
 	layout := e.Layout(line, bufferLine)
 	// Apply style to all cells
 	for i := range layout.Cells {
@@ -280,7 +280,7 @@ func (e *LayoutEngine) findWrapPoint(layout *LineLayout, currentCol int) int {
 
 // ApplyStyles applies a slice of style spans to a layout.
 // Spans are applied in order, so later spans override earlier ones.
-func (e *LayoutEngine) ApplyStyles(layout *LineLayout, spans []renderer.StyleSpan) {
+func (e *LayoutEngine) ApplyStyles(layout *LineLayout, spans []core.StyleSpan) {
 	for _, span := range spans {
 		// Validate span
 		if span.StartCol > span.EndCol {

@@ -1,7 +1,7 @@
 // Package backend provides terminal backend abstraction for the renderer.
 package backend
 
-import "github.com/dshills/keystorm/internal/renderer"
+import "github.com/dshills/keystorm/internal/renderer/core"
 
 // CursorStyle defines how the cursor appears.
 type CursorStyle int
@@ -159,14 +159,14 @@ type Backend interface {
 
 	// SetCell sets a single cell at the given position.
 	// Positions outside the terminal are silently ignored.
-	SetCell(x, y int, cell renderer.Cell)
+	SetCell(x, y int, cell core.Cell)
 
 	// GetCell returns the cell at the given position.
 	// Returns an empty cell for positions outside the terminal.
-	GetCell(x, y int) renderer.Cell
+	GetCell(x, y int) core.Cell
 
 	// Fill fills a rectangular region with the given cell.
-	Fill(rect renderer.ScreenRect, cell renderer.Cell)
+	Fill(rect core.ScreenRect, cell core.Cell)
 
 	// Clear clears the entire screen with the default style.
 	Clear()
@@ -219,7 +219,7 @@ type Backend interface {
 // NullBackend is a no-op backend for testing.
 type NullBackend struct {
 	width, height int
-	cells         [][]renderer.Cell
+	cells         [][]core.Cell
 	cursorX       int
 	cursorY       int
 	cursorVisible bool
@@ -238,11 +238,11 @@ func NewNullBackend(width, height int) *NullBackend {
 }
 
 func (b *NullBackend) Init() error {
-	b.cells = make([][]renderer.Cell, b.height)
+	b.cells = make([][]core.Cell, b.height)
 	for i := range b.cells {
-		b.cells[i] = make([]renderer.Cell, b.width)
+		b.cells[i] = make([]core.Cell, b.width)
 		for j := range b.cells[i] {
-			b.cells[i][j] = renderer.EmptyCell()
+			b.cells[i][j] = core.EmptyCell()
 		}
 	}
 	return nil
@@ -258,20 +258,20 @@ func (b *NullBackend) OnResize(callback func(width, height int)) {
 	b.resizeHandler = callback
 }
 
-func (b *NullBackend) SetCell(x, y int, cell renderer.Cell) {
+func (b *NullBackend) SetCell(x, y int, cell core.Cell) {
 	if x >= 0 && x < b.width && y >= 0 && y < b.height {
 		b.cells[y][x] = cell
 	}
 }
 
-func (b *NullBackend) GetCell(x, y int) renderer.Cell {
+func (b *NullBackend) GetCell(x, y int) core.Cell {
 	if x >= 0 && x < b.width && y >= 0 && y < b.height {
 		return b.cells[y][x]
 	}
-	return renderer.EmptyCell()
+	return core.EmptyCell()
 }
 
-func (b *NullBackend) Fill(rect renderer.ScreenRect, cell renderer.Cell) {
+func (b *NullBackend) Fill(rect core.ScreenRect, cell core.Cell) {
 	for y := rect.Top; y < rect.Bottom && y < b.height; y++ {
 		for x := rect.Left; x < rect.Right && x < b.width; x++ {
 			if x >= 0 && y >= 0 {
@@ -282,7 +282,7 @@ func (b *NullBackend) Fill(rect renderer.ScreenRect, cell renderer.Cell) {
 }
 
 func (b *NullBackend) Clear() {
-	empty := renderer.EmptyCell()
+	empty := core.EmptyCell()
 	for y := range b.cells {
 		for x := range b.cells[y] {
 			b.cells[y][x] = empty
@@ -341,11 +341,11 @@ func (b *NullBackend) CursorStyleValue() CursorStyle {
 func (b *NullBackend) Resize(width, height int) {
 	b.width = width
 	b.height = height
-	b.cells = make([][]renderer.Cell, height)
+	b.cells = make([][]core.Cell, height)
 	for i := range b.cells {
-		b.cells[i] = make([]renderer.Cell, width)
+		b.cells[i] = make([]core.Cell, width)
 		for j := range b.cells[i] {
-			b.cells[i][j] = renderer.EmptyCell()
+			b.cells[i][j] = core.EmptyCell()
 		}
 	}
 	if b.resizeHandler != nil {
