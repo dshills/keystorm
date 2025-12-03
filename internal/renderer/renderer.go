@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"github.com/dshills/keystorm/internal/renderer/backend"
+	"github.com/dshills/keystorm/internal/renderer/cursor"
 	"github.com/dshills/keystorm/internal/renderer/layout"
+	"github.com/dshills/keystorm/internal/renderer/selection"
 	"github.com/dshills/keystorm/internal/renderer/viewport"
 )
 
@@ -116,9 +118,12 @@ type Renderer struct {
 	hlProvider HighlightProvider
 
 	// Components
-	viewport  *viewport.Viewport
-	lineCache *layout.LineCache
-	layout    *layout.LayoutEngine
+	viewport     *viewport.Viewport
+	lineCache    *layout.LineCache
+	layout       *layout.LayoutEngine
+	cursorRender *cursor.Renderer
+	selManager   *selection.Manager
+	selRenderer  *selection.Renderer
 
 	// Frame timing
 	lastFrame    time.Time
@@ -138,6 +143,16 @@ func New(backend backend.Backend, opts Options) *Renderer {
 	layoutEngine := layout.NewLayoutEngine(4)            // Default tab width
 	lineCache := layout.NewLineCache(layoutEngine, 1000) // Cache up to 1000 lines
 
+	// Create cursor renderer with config from options
+	cursorConfig := cursor.Config{
+		Style:          cursorStyleFromBackend(opts.CursorStyle),
+		BlinkEnabled:   opts.CursorBlink,
+		BlinkRate:      opts.CursorBlinkRate,
+		PrimaryColor:   ColorDefault,
+		SecondaryColor: ColorGray,
+		BlinkOnType:    true,
+	}
+
 	r := &Renderer{
 		opts:         opts,
 		backend:      backend,
@@ -146,6 +161,9 @@ func New(backend backend.Backend, opts Options) *Renderer {
 		viewport:     viewport.NewViewport(width, height),
 		lineCache:    lineCache,
 		layout:       layoutEngine,
+		cursorRender: cursor.New(cursorConfig),
+		selManager:   selection.NewManager(),
+		selRenderer:  selection.NewRenderer(selection.DefaultConfig()),
 		lastFrame:    time.Now(),
 		minFrameTime: time.Second / time.Duration(opts.MaxFPS),
 		needsRedraw:  true,
@@ -296,6 +314,12 @@ func (r *Renderer) Update(dt float64) bool {
 		r.needsRedraw = true
 	}
 
+	// Update cursor blink animation
+	cursorChanged := r.cursorRender.Update(time.Now())
+	if cursorChanged {
+		r.needsRedraw = true
+	}
+
 	return r.needsRedraw
 }
 
@@ -412,6 +436,9 @@ func (r *Renderer) renderLine(line uint32, screenRow int) {
 		}
 	}
 
+	// Get selection ranges for this line
+	lineSelections := r.selManager.SelectionsOnLine(line)
+
 	// Render cells
 	leftCol := r.viewport.LeftColumn()
 	contentWidth := r.width - r.gutterWidth
@@ -427,8 +454,35 @@ func (r *Renderer) renderLine(line uint32, screenRow int) {
 			cell = EmptyCell()
 		}
 
+		// Apply selection highlighting
+		if r.isColumnSelected(lineSelections, uint32(visCol), len(lineLayout.Cells)) {
+			cell = r.selRenderer.ApplySelection(cell, true)
+		}
+
 		r.backend.SetCell(screenX, screenRow, cell)
 	}
+}
+
+// isColumnSelected checks if a column is within any selection on the line.
+func (r *Renderer) isColumnSelected(selections []selection.LineSelection, col uint32, lineLen int) bool {
+	for _, sel := range selections {
+		if col < sel.StartCol {
+			continue
+		}
+		if sel.SelectToEnd {
+			// Selection extends to end of line - select all columns from StartCol
+			// up to (but not including) lineLen
+			if int(col) < lineLen {
+				return true
+			}
+		} else {
+			// Fixed-range selection
+			if col < sel.EndCol {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // renderGutter renders the gutter (line numbers) for a line.
@@ -624,4 +678,104 @@ func (r *Renderer) CenterOnLine(line uint32, smooth bool) {
 	defer r.mu.Unlock()
 	r.viewport.CenterOn(line, smooth)
 	r.needsRedraw = true
+}
+
+// CursorRenderer returns the cursor renderer for external manipulation.
+func (r *Renderer) CursorRenderer() *cursor.Renderer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.cursorRender
+}
+
+// SelectionManager returns the selection manager for external manipulation.
+func (r *Renderer) SelectionManager() *selection.Manager {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.selManager
+}
+
+// SetCursorStyle updates the cursor style.
+func (r *Renderer) SetCursorStyle(style cursor.Style) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cursorRender.SetStyle(style)
+	r.backend.SetCursorStyle(backendStyleFromCursor(style))
+	r.needsRedraw = true
+}
+
+// ResetCursorBlink resets the cursor blink to visible.
+// Call this when the user types or moves the cursor.
+func (r *Renderer) ResetCursorBlink() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cursorRender.ResetBlink()
+	r.needsRedraw = true
+}
+
+// PauseCursorBlink temporarily pauses cursor blinking.
+func (r *Renderer) PauseCursorBlink(duration time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cursorRender.PauseBlink(duration)
+}
+
+// StartSelection begins a new selection at the given position.
+func (r *Renderer) StartSelection(line, col uint32, selType selection.Type) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.selManager.StartSelection(line, col, selType)
+	r.needsRedraw = true
+}
+
+// ExtendSelection extends the current selection to the given position.
+func (r *Renderer) ExtendSelection(line, col uint32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.selManager.ExtendSelection(line, col)
+	r.needsRedraw = true
+}
+
+// ClearSelection clears all selections.
+func (r *Renderer) ClearSelection() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.selManager.Clear()
+	r.needsRedraw = true
+}
+
+// HasSelection returns true if there's an active selection.
+func (r *Renderer) HasSelection() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.selManager.IsActive()
+}
+
+// cursorStyleFromBackend converts a backend cursor style to cursor package style.
+func cursorStyleFromBackend(bs backend.CursorStyle) cursor.Style {
+	switch bs {
+	case backend.CursorBlock:
+		return cursor.StyleBlock
+	case backend.CursorBar:
+		return cursor.StyleBar
+	case backend.CursorUnderline:
+		return cursor.StyleUnderline
+	default:
+		return cursor.StyleBlock
+	}
+}
+
+// backendStyleFromCursor converts a cursor package style to backend cursor style.
+func backendStyleFromCursor(cs cursor.Style) backend.CursorStyle {
+	switch cs {
+	case cursor.StyleBlock:
+		return backend.CursorBlock
+	case cursor.StyleBar:
+		return backend.CursorBar
+	case cursor.StyleUnderline:
+		return backend.CursorUnderline
+	case cursor.StyleHollow:
+		return backend.CursorBlock // Backend doesn't support hollow, fallback to block
+	default:
+		return backend.CursorBlock
+	}
 }
