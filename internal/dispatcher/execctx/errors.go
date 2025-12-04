@@ -21,4 +21,7 @@ var (
 
 	// ErrMissingRenderer indicates renderer is required but not set.
 	ErrMissingRenderer = errors.New("execution context: renderer is required")
+
+	// ErrMissingMotion indicates a motion, text object, or selection is required for the operator.
+	ErrMissingMotion = errors.New("execution context: operator requires motion, text object, or selection")
 )
