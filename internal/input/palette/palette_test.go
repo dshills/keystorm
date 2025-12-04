@@ -255,7 +255,7 @@ func TestFilterFuzzyMatch(t *testing.T) {
 		{"open", "file.open", 1},  // Exact match
 		{"cop", "edit.copy", 1},   // Prefix match
 		{"xyz", "", 0},            // No match
-		{"file", "file.save", 3},  // Matches all file.* commands
+		{"file", "file.open", 3},  // Matches all file.* commands (alphabetical tie-breaker)
 		{"sfa", "file.saveAs", 1}, // Matches "Save File As"
 	}
 

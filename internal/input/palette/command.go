@@ -182,7 +182,7 @@ func (c *Command) Execute(args map[string]any) error {
 	}
 
 	// Clone args map to avoid modifying caller's map
-	execArgs := make(map[string]any, len(c.Args))
+	execArgs := make(map[string]any, len(args))
 	for k, v := range args {
 		execArgs[k] = v
 	}

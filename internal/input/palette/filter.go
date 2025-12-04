@@ -14,7 +14,7 @@ type SearchResult struct {
 	// Score is the match score (higher is better).
 	Score int
 
-	// Matches contains the indices of matched characters in the title.
+	// Matches contains the rune indices of matched characters in the title.
 	Matches []int
 }
 
@@ -33,8 +33,11 @@ func NewFilter() *Filter {
 }
 
 // Search finds commands matching the query using fuzzy matching.
-// Results are sorted by score (descending).
+// Results are sorted by score (descending), with ties broken by title.
 func (f *Filter) Search(commands []*Command, query string, limit int) []SearchResult {
+	// Normalize query once at entry point
+	query = strings.TrimSpace(strings.ToLower(query))
+
 	if query == "" {
 		// Return all commands (caller handles sorting by history)
 		results := make([]SearchResult, 0, len(commands))
@@ -50,11 +53,11 @@ func (f *Filter) Search(commands []*Command, query string, limit int) []SearchRe
 		return results
 	}
 
-	query = strings.ToLower(query)
+	queryRunes := []rune(query)
 	results := make([]SearchResult, 0, len(commands))
 
 	for _, cmd := range commands {
-		score, matches := f.matchCommand(query, cmd)
+		score, matches := f.matchCommand(queryRunes, cmd)
 		if score > f.MinScore {
 			results = append(results, SearchResult{
 				Command: cmd,
@@ -64,9 +67,12 @@ func (f *Filter) Search(commands []*Command, query string, limit int) []SearchRe
 		}
 	}
 
-	// Sort by score descending
+	// Sort by score descending, then by title for deterministic ordering
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		return results[i].Command.Title < results[j].Command.Title
 	})
 
 	if limit > 0 && len(results) > limit {
@@ -77,29 +83,29 @@ func (f *Filter) Search(commands []*Command, query string, limit int) []SearchRe
 }
 
 // matchCommand scores a command against the query.
-// Returns score and matched character indices.
-func (f *Filter) matchCommand(query string, cmd *Command) (int, []int) {
+// Returns score and matched character indices (rune indices).
+func (f *Filter) matchCommand(queryRunes []rune, cmd *Command) (int, []int) {
 	// Try matching against title first (higher weight)
-	titleScore, titleMatches := f.fuzzyMatch(query, cmd.Title)
+	titleScore, titleMatches := f.fuzzyMatch(queryRunes, cmd.Title)
 	if titleScore > 0 {
 		// Boost title matches
 		return titleScore + 50, titleMatches
 	}
 
 	// Try matching against ID
-	idScore, idMatches := f.fuzzyMatch(query, cmd.ID)
+	idScore, idMatches := f.fuzzyMatch(queryRunes, cmd.ID)
 	if idScore > 0 {
 		return idScore + 25, idMatches
 	}
 
 	// Try matching against description
-	descScore, descMatches := f.fuzzyMatch(query, cmd.Description)
+	descScore, descMatches := f.fuzzyMatch(queryRunes, cmd.Description)
 	if descScore > 0 {
 		return descScore, descMatches
 	}
 
 	// Try matching against category
-	catScore, catMatches := f.fuzzyMatch(query, cmd.Category)
+	catScore, catMatches := f.fuzzyMatch(queryRunes, cmd.Category)
 	if catScore > 0 {
 		return catScore, catMatches
 	}
@@ -107,35 +113,40 @@ func (f *Filter) matchCommand(query string, cmd *Command) (int, []int) {
 	return 0, nil
 }
 
-// fuzzyMatch performs fuzzy string matching and returns score and match indices.
-func (f *Filter) fuzzyMatch(query, text string) (int, []int) {
-	if text == "" {
+// fuzzyMatch performs fuzzy string matching using runes for proper UTF-8 support.
+// Returns score and match indices (rune indices, not byte indices).
+func (f *Filter) fuzzyMatch(queryRunes []rune, text string) (int, []int) {
+	if text == "" || len(queryRunes) == 0 {
 		return 0, nil
 	}
 
-	textLower := strings.ToLower(text)
-	matches := make([]int, 0, len(query))
+	// Convert text to runes for proper UTF-8 handling
+	textRunes := []rune(strings.ToLower(text))
+	originalRunes := []rune(text) // Keep original case for boundary detection
+
+	matches := make([]int, 0, len(queryRunes))
 	queryIdx := 0
 
-	for i := 0; i < len(textLower) && queryIdx < len(query); i++ {
-		if textLower[i] == query[queryIdx] {
+	for i := 0; i < len(textRunes) && queryIdx < len(queryRunes); i++ {
+		if textRunes[i] == queryRunes[queryIdx] {
 			matches = append(matches, i)
 			queryIdx++
 		}
 	}
 
 	// All query characters must match
-	if queryIdx != len(query) {
+	if queryIdx != len(queryRunes) {
 		return 0, nil
 	}
 
-	// Calculate score
-	score := f.calculateScore(query, text, textLower, matches)
+	// Calculate score using rune-based operations
+	score := f.calculateScore(queryRunes, originalRunes, textRunes, matches)
 	return score, matches
 }
 
 // calculateScore computes a match score based on various factors.
-func (f *Filter) calculateScore(query, text, textLower string, matches []int) int {
+// All indices and lengths are rune-based for proper UTF-8 support.
+func (f *Filter) calculateScore(queryRunes, originalRunes, textRunes []rune, matches []int) int {
 	if len(matches) == 0 {
 		return 0
 	}
@@ -154,7 +165,7 @@ func (f *Filter) calculateScore(query, text, textLower string, matches []int) in
 	// Bonus for matches at word boundaries
 	wordBoundaryBonus := 0
 	for _, idx := range matches {
-		if f.isWordBoundary(text, idx) {
+		if f.isWordBoundaryRunes(originalRunes, idx) {
 			wordBoundaryBonus += 15
 		}
 	}
@@ -178,14 +189,24 @@ func (f *Filter) calculateScore(query, text, textLower string, matches []int) in
 		score -= matches[0]
 	}
 
-	// Bonus for shorter text (more specific match)
-	if len(text) < 20 {
-		score += 20 - len(text)
+	// Bonus for shorter text (more specific match) - use rune count
+	textLen := len(textRunes)
+	if textLen < 20 {
+		score += 20 - textLen
 	}
 
 	// Bonus for exact prefix match
-	if strings.HasPrefix(textLower, query) {
-		score += 50
+	if len(textRunes) >= len(queryRunes) {
+		isPrefix := true
+		for i, qr := range queryRunes {
+			if textRunes[i] != qr {
+				isPrefix = false
+				break
+			}
+		}
+		if isPrefix {
+			score += 50
+		}
 	}
 
 	// Ensure minimum score of 1 for any match
@@ -196,22 +217,22 @@ func (f *Filter) calculateScore(query, text, textLower string, matches []int) in
 	return score
 }
 
-// isWordBoundary checks if the character at idx is at a word boundary.
-func (f *Filter) isWordBoundary(text string, idx int) bool {
+// isWordBoundaryRunes checks if the rune at idx is at a word boundary.
+// Uses rune slice for proper UTF-8 handling.
+func (f *Filter) isWordBoundaryRunes(runes []rune, idx int) bool {
 	if idx == 0 {
 		return true
 	}
-	if idx >= len(text) {
+	if idx >= len(runes) {
 		return false
 	}
 
-	prevChar := rune(text[idx-1])
-	currChar := rune(text[idx])
+	prevChar := runes[idx-1]
+	currChar := runes[idx]
 
 	// Word boundary conditions:
-	// - After separator characters
-	if prevChar == '/' || prevChar == '_' || prevChar == '-' ||
-		prevChar == '.' || prevChar == ' ' || prevChar == ':' {
+	// - After separator characters (including Unicode space)
+	if unicode.IsSpace(prevChar) || unicode.IsPunct(prevChar) {
 		return true
 	}
 
@@ -230,7 +251,7 @@ func (f *Filter) FilterByCategory(commands []*Command, category string) []*Comma
 	}
 
 	categoryLower := strings.ToLower(category)
-	result := make([]*Command, 0)
+	result := make([]*Command, 0, len(commands)/4)
 
 	for _, cmd := range commands {
 		if strings.ToLower(cmd.Category) == categoryLower {
@@ -247,7 +268,7 @@ func (f *Filter) FilterBySource(commands []*Command, source string) []*Command {
 		return commands
 	}
 
-	result := make([]*Command, 0)
+	result := make([]*Command, 0, len(commands)/4)
 
 	for _, cmd := range commands {
 		if cmd.Source == source {

@@ -154,8 +154,16 @@ func (p *Palette) Search(query string, limit int) []SearchResult {
 		return p.recentCommands(commands, limit)
 	}
 
-	// Perform fuzzy search
-	results := p.filter.Search(commands, query, 0) // Get all matches first
+	// Perform fuzzy search with limit for early cutoff optimization
+	// We request more results than needed since history boost may reorder
+	searchLimit := limit
+	if searchLimit > 0 {
+		searchLimit = limit * 2 // Get extra results for history reordering
+		if searchLimit < 50 {
+			searchLimit = 50 // Minimum to ensure good coverage
+		}
+	}
+	results := p.filter.Search(commands, query, searchLimit)
 
 	// Boost recent commands
 	for i := range results {
@@ -166,9 +174,12 @@ func (p *Palette) Search(query string, limit int) []SearchResult {
 		}
 	}
 
-	// Re-sort after history boost
+	// Re-sort after history boost with deterministic tie-breaker
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		return results[i].Command.Title < results[j].Command.Title
 	})
 
 	if limit > 0 && len(results) > limit {
@@ -211,6 +222,7 @@ func (p *Palette) recentCommands(commands []*Command, limit int) []SearchResult 
 }
 
 // Execute runs a command by ID with the given arguments.
+// History is only updated after successful execution.
 func (p *Palette) Execute(id string, args map[string]any) error {
 	p.mu.RLock()
 	cmd, exists := p.commands[id]
@@ -220,10 +232,15 @@ func (p *Palette) Execute(id string, args map[string]any) error {
 		return fmt.Errorf("unknown command: %s", id)
 	}
 
-	// Record in history before execution
-	p.history.Add(id)
+	// Execute the command
+	err := cmd.Execute(args)
 
-	return cmd.Execute(args)
+	// Only record in history after successful execution
+	if err == nil {
+		p.history.Add(id)
+	}
+
+	return err
 }
 
 // ExecuteWithValidation runs a command after validating arguments.
