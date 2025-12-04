@@ -122,7 +122,7 @@ func TestNodeSlicePool(t *testing.T) {
 }
 
 func TestStringBuilderPool(t *testing.T) {
-	w := GetStringBuilder(100)
+	w := getStringBuilder(100)
 	if w == nil {
 		t.Fatal("expected non-nil wrapper")
 	}
@@ -139,7 +139,7 @@ func TestStringBuilderPool(t *testing.T) {
 	PutStringBuilder(w)
 
 	// Get another one
-	w2 := GetStringBuilder(50)
+	w2 := getStringBuilder(50)
 	if w2.Len() != 0 {
 		t.Errorf("expected empty builder after pool reuse, got %d", w2.Len())
 	}

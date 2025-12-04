@@ -46,7 +46,7 @@ func (g *GroupScope) Cancel() {
 }
 
 // Transaction executes a function within a grouped undo context.
-// If the function returns an error, the group is cancelled.
+// If the function returns an error, the group is canceled.
 // Otherwise, the group is ended normally.
 func (h *History) Transaction(name string, fn func() error) error {
 	h.BeginGroup(name)

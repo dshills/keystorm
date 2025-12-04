@@ -1,0 +1,147 @@
+# golangci-lint configuration for Keystorm
+# https://golangci-lint.run/docs/configuration/
+# golangci-lint v2.x format
+
+version: "2"
+
+run:
+  # Timeout for analysis
+  timeout: 5m
+
+  # Include test files
+  tests: true
+
+linters:
+  # Start with defaults and add more
+  default: standard
+
+  # Enable additional linters
+  enable:
+    # Bug detection
+    - bodyclose         # Check HTTP response body is closed
+    - copyloopvar       # Detect loop variable capture issues
+    - durationcheck     # Check for duration multiplication issues
+    - errname           # Check error naming conventions
+    - errorlint         # Find issues with error wrapping
+    - nilerr            # Check for nil error returns
+    - noctx             # Check for http requests without context
+    - rowserrcheck      # Check sql.Rows.Err is checked
+    - sqlclosecheck     # Check sql.Rows and sql.Stmt are closed
+
+    # Code quality
+    - gosec             # Security checks
+    - misspell          # Find misspelled words
+    - prealloc          # Suggest preallocations
+    - predeclared       # Find shadowed predeclared identifiers
+    - revive            # Fast, configurable linter
+    - unconvert         # Remove unnecessary type conversions
+    - unparam           # Find unused function parameters
+    - wastedassign      # Find wasted assignments
+
+    # Testing
+    - testifylint       # Check testify usage
+    - tparallel         # Detect incorrect t.Parallel usage
+
+  # Exclusion rules (v2 format)
+  exclusions:
+    # Use common presets
+    presets:
+      - std-error-handling
+      - common-false-positives
+
+    # Custom rules
+    rules:
+      # Exclude linters from test files
+      - path: '(.+)_test\.go'
+        linters:
+          - errcheck
+          - gosec
+
+      # Exclude generated files
+      - path: '.*\.gen\.go'
+        linters:
+          - all
+
+      # Allow unused parameters in interface implementations
+      - linters:
+          - unparam
+        text: "always receives"
+
+      # G115: Integer overflow conversion - too many false positives
+      - linters:
+          - gosec
+        text: "integer overflow conversion"
+
+      # G304: File inclusion via variable - often intentional
+      - linters:
+          - gosec
+        text: "G304"
+
+      # G301/G306: File permissions - project preference
+      - linters:
+          - gosec
+        text: "G30[16]"
+
+  settings:
+    errcheck:
+      # Check type assertions
+      check-type-assertions: true
+      # Check blank identifier assignments
+      check-blank: false
+
+    gosec:
+      excludes:
+        - G104  # Audit errors not checked (handled by errcheck)
+
+    govet:
+      disable:
+        - fieldalignment  # Too noisy, optimize when needed
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: var-declaration
+        - name: var-naming
+        # Disabled: too noisy for initial adoption
+        # - name: exported
+        # - name: package-comments
+
+    staticcheck:
+      checks:
+        - all
+
+formatters:
+  enable:
+    - goimports
+
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/dshills/keystorm
+
+issues:
+  # Maximum issues count per linter
+  max-issues-per-linter: 50
+
+  # Maximum same issues count
+  max-same-issues: 10
+
+output:
+  formats:
+    text:
+      path: stdout

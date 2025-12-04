@@ -176,12 +176,10 @@ func (v *Viewport) ScrollPercent() float64 {
 		return 0.0
 	}
 
-	maxScroll := v.maxLine
-	if v.maxLine > uint32(v.height) {
-		maxScroll = v.maxLine - uint32(v.height)
-	} else {
+	if v.maxLine <= uint32(v.height) {
 		return 0.0
 	}
+	maxScroll := v.maxLine - uint32(v.height)
 
 	return float64(v.topLine) / float64(maxScroll)
 }

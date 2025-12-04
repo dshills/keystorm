@@ -203,7 +203,7 @@ func OffsetToLineColumn(s string, offset int) Point {
 	}
 
 	var line uint32
-	var lastNewline int = -1
+	lastNewline := -1
 
 	for i, c := range s[:offset] {
 		if c == '\n' {

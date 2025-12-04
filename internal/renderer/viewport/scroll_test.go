@@ -76,7 +76,7 @@ func TestScrollingDirection(t *testing.T) {
 
 	// Scroll down
 	v.ScrollTo(50, true)
-	vDir, hDir = v.ScrollingDirection()
+	vDir, _ = v.ScrollingDirection()
 	if vDir != ScrollDown {
 		t.Errorf("expected ScrollDown, got %d", vDir)
 	}

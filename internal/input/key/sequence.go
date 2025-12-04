@@ -185,7 +185,7 @@ func (s *Sequence) Append(other *Sequence) *Sequence {
 	return &Sequence{Events: events}
 }
 
-// ContainsOnly returns true if the sequence contains only the given event types.
+// ContainsOnlyRunes returns true if the sequence contains only rune events.
 func (s *Sequence) ContainsOnlyRunes() bool {
 	for _, e := range s.Events {
 		if !e.IsRune() {

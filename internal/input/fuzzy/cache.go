@@ -37,7 +37,7 @@ func NewCache(maxSize int) *Cache {
 func (c *Cache) Get(query string) []Result {
 	// First check with read lock for cache misses (common case)
 	c.mu.RLock()
-	elem, ok := c.items[query]
+	_, ok := c.items[query]
 	if !ok {
 		c.mu.RUnlock()
 		return nil
@@ -49,7 +49,7 @@ func (c *Cache) Get(query string) []Result {
 	defer c.mu.Unlock()
 
 	// Re-check in case entry was evicted between locks
-	elem, ok = c.items[query]
+	elem, ok := c.items[query]
 	if !ok {
 		return nil
 	}
@@ -57,7 +57,7 @@ func (c *Cache) Get(query string) []Result {
 	// Move to front (most recently used)
 	c.lru.MoveToFront(elem)
 
-	entry := elem.Value.(*cacheEntry)
+	entry := elem.Value.(*cacheEntry) //nolint:errcheck // list only contains *cacheEntry
 
 	// Return a copy to prevent external modification
 	results := make([]Result, len(entry.results))
@@ -73,7 +73,7 @@ func (c *Cache) Set(query string, results []Result) {
 	// Check if already exists
 	if elem, ok := c.items[query]; ok {
 		c.lru.MoveToFront(elem)
-		entry := elem.Value.(*cacheEntry)
+		entry := elem.Value.(*cacheEntry) //nolint:errcheck // list only contains *cacheEntry
 		entry.results = c.copyResults(results)
 		return
 	}
@@ -131,7 +131,7 @@ func (c *Cache) evictOldest() {
 // Must be called with lock held.
 func (c *Cache) removeElement(elem *list.Element) {
 	c.lru.Remove(elem)
-	entry := elem.Value.(*cacheEntry)
+	entry := elem.Value.(*cacheEntry) //nolint:errcheck // list only contains *cacheEntry
 	delete(c.items, entry.query)
 }
 
@@ -182,7 +182,7 @@ func (c *PrefixCache) Set(query string, results []Result) {
 	// Check if already exists
 	if elem, ok := c.items[query]; ok {
 		c.lru.MoveToFront(elem)
-		entry := elem.Value.(*cacheEntry)
+		entry := elem.Value.(*cacheEntry) //nolint:errcheck // list only contains *cacheEntry
 		entry.results = c.copyResults(results)
 		return
 	}

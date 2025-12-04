@@ -362,7 +362,9 @@ func (h *Handler) handleLeftPress(event Event) *input.Action {
 // editor conventions. Selection is finalized during drag, so release only
 // cleans up tracking state. If release-time actions are needed in the future,
 // this method can be extended without breaking existing behavior.
-func (h *Handler) handleRelease(event Event) *input.Action {
+//
+//nolint:unparam // result always nil by design; return kept for future extensibility
+func (h *Handler) handleRelease(_ Event) *input.Action {
 	// End drag tracking
 	wasSelecting := h.drag.isSelecting()
 	h.drag.end()

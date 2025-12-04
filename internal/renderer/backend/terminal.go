@@ -3,8 +3,9 @@ package backend
 import (
 	"sync"
 
-	"github.com/dshills/keystorm/internal/renderer/core"
 	"github.com/gdamore/tcell/v2"
+
+	"github.com/dshills/keystorm/internal/renderer/core"
 )
 
 // Terminal implements Backend using tcell for terminal output.
@@ -73,7 +74,7 @@ func (t *Terminal) GetCell(x, y int) core.Cell {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	mainc, _, style, _ := t.screen.GetContent(x, y)
+	mainc, _, style, _ := t.screen.GetContent(x, y) //nolint:staticcheck // GetContent is the correct API
 	return core.Cell{
 		Rune:  mainc,
 		Width: core.RuneWidth(mainc),
@@ -154,7 +155,7 @@ func (t *Terminal) PostEvent(event Event) {
 	// For now, we only support posting key events
 	if event.Type == EventKey {
 		tcellEv := tcell.NewEventKey(convertToTcellKey(event.Key), event.Rune, convertToTcellMod(event.Mod))
-		t.screen.PostEvent(tcellEv)
+		_ = t.screen.PostEvent(tcellEv) // best-effort; event queue may be full
 	}
 }
 
@@ -169,7 +170,7 @@ func (t *Terminal) Beep() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.screen.Beep()
+	_ = t.screen.Beep() // best-effort; terminal may not support beep
 }
 
 func (t *Terminal) EnableMouse() {

@@ -601,7 +601,7 @@ func (p *Parser) parseCharSearch(r rune) ParseResult {
 // parseMarkSet handles input after 'm'.
 func (p *Parser) parseMarkSet(r rune) ParseResult {
 	// Mark name must be a-z, A-Z, or 0-9
-	if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+	if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
 		p.Reset()
 		return ParseResult{Status: StatusInvalid}
 	}
@@ -620,7 +620,9 @@ func (p *Parser) parseMarkSet(r rune) ParseResult {
 // parseMarkGoto handles input after ' or `.
 func (p *Parser) parseMarkGoto(r rune) ParseResult {
 	// Mark name must be valid
-	if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '\'' || r == '`' || r == '.' || r == '<' || r == '>') {
+	isAlphaNum := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+	isSpecial := r == '\'' || r == '`' || r == '.' || r == '<' || r == '>'
+	if !isAlphaNum && !isSpecial {
 		p.Reset()
 		return ParseResult{Status: StatusInvalid}
 	}

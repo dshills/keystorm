@@ -396,6 +396,8 @@ func (c *Cursor) SeekLine(line uint32) bool {
 
 // findNthNewline finds the byte position of the nth newline in s.
 // Returns the position of the newline, or -1 if not found.
+//
+//nolint:unused // retained for future line-based cursor operations
 func findNthNewline(s string, n uint32) int {
 	if n == 0 {
 		return -1

@@ -117,7 +117,7 @@ const (
 	TokenEditorCursor
 
 	// Sentinel for iteration
-	tokenTypeCount
+	tokenTypeCount //nolint:unused // sentinel value for iteration bounds
 )
 
 // String returns the string representation of a token type.

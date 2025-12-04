@@ -230,7 +230,7 @@ func (g *Gutter) RenderLine(line uint32, isVisible bool) []Cell {
 	// Fold markers (if enabled) - placeholder for future
 	if g.config.ShowFoldMarkers {
 		// Will be implemented in a future phase
-		col++
+		_ = col // col will be used in future implementation
 	}
 
 	// Separator (last column)
@@ -335,12 +335,12 @@ func calculateWidth(config Config, lineCount uint32) int {
 	}
 
 	if config.ShowFoldMarkers {
-		width += 1
+		width++
 	}
 
 	// Add separator
 	if width > 0 {
-		width += 1
+		width++
 	}
 
 	return width

@@ -66,7 +66,7 @@ type DiffPreview struct {
 	modifyStyle core.Style
 
 	// showLineNumbers shows line numbers in the diff.
-	showLineNumbers bool
+	showLineNumbers bool //nolint:unused // for future line number display
 
 	// collapsed indicates if the diff is collapsed to a summary.
 	collapsed bool

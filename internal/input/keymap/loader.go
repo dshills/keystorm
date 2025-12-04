@@ -54,16 +54,7 @@ func (l *Loader) LoadReader(r io.Reader) (*Keymap, error) {
 	}
 
 	for _, bc := range config.Bindings {
-		binding := Binding{
-			Keys:        bc.Keys,
-			Action:      bc.Action,
-			Args:        bc.Args,
-			When:        bc.When,
-			Description: bc.Description,
-			Priority:    bc.Priority,
-			Category:    bc.Category,
-		}
-		km.Bindings = append(km.Bindings, binding)
+		km.Bindings = append(km.Bindings, Binding(bc))
 	}
 
 	return km, nil
@@ -140,15 +131,7 @@ func (k *Keymap) MarshalJSON() ([]byte, error) {
 	}
 
 	for _, b := range k.Bindings {
-		config.Bindings = append(config.Bindings, bindingConfig{
-			Keys:        b.Keys,
-			Action:      b.Action,
-			Args:        b.Args,
-			When:        b.When,
-			Description: b.Description,
-			Priority:    b.Priority,
-			Category:    b.Category,
-		})
+		config.Bindings = append(config.Bindings, bindingConfig(b))
 	}
 
 	return json.MarshalIndent(config, "", "  ")
@@ -169,15 +152,7 @@ func (k *Keymap) UnmarshalJSON(data []byte) error {
 	k.Bindings = make([]Binding, 0, len(config.Bindings))
 
 	for _, bc := range config.Bindings {
-		k.Bindings = append(k.Bindings, Binding{
-			Keys:        bc.Keys,
-			Action:      bc.Action,
-			Args:        bc.Args,
-			When:        bc.When,
-			Description: bc.Description,
-			Priority:    bc.Priority,
-			Category:    bc.Category,
-		})
+		k.Bindings = append(k.Bindings, Binding(bc))
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package buffer
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -103,12 +104,12 @@ func TestBufferInsertOutOfRange(t *testing.T) {
 	b := NewBufferFromString("Hello")
 
 	_, err := b.Insert(100, "X")
-	if err != ErrOffsetOutOfRange {
+	if !errors.Is(err, ErrOffsetOutOfRange) {
 		t.Errorf("expected ErrOffsetOutOfRange, got %v", err)
 	}
 
 	_, err = b.Insert(-1, "X")
-	if err != ErrOffsetOutOfRange {
+	if !errors.Is(err, ErrOffsetOutOfRange) {
 		t.Errorf("expected ErrOffsetOutOfRange, got %v", err)
 	}
 }
@@ -130,12 +131,12 @@ func TestBufferDeleteInvalidRange(t *testing.T) {
 	b := NewBufferFromString("Hello")
 
 	err := b.Delete(3, 2)
-	if err != ErrRangeInvalid {
+	if !errors.Is(err, ErrRangeInvalid) {
 		t.Errorf("expected ErrRangeInvalid, got %v", err)
 	}
 
 	err = b.Delete(0, 100)
-	if err != ErrRangeInvalid {
+	if !errors.Is(err, ErrRangeInvalid) {
 		t.Errorf("expected ErrRangeInvalid, got %v", err)
 	}
 }
@@ -208,7 +209,7 @@ func TestBufferApplyEditsOverlap(t *testing.T) {
 	}
 
 	err := b.ApplyEdits(edits)
-	if err != ErrEditsOverlap {
+	if !errors.Is(err, ErrEditsOverlap) {
 		t.Errorf("expected ErrEditsOverlap, got %v", err)
 	}
 }
@@ -451,12 +452,12 @@ func TestBufferConcurrentReadWrite(t *testing.T) {
 	// Writers
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		go func(n int) {
+		go func() {
 			defer wg.Done()
 			for j := 0; j < 10; j++ {
 				b.Insert(0, "X")
 			}
-		}(i)
+		}()
 	}
 
 	// Readers

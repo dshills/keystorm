@@ -329,7 +329,7 @@ func TestRegistryRegister(t *testing.T) {
 	}
 
 	// Without leading dot
-	got, ok = r.GetByExtension("go")
+	_, ok = r.GetByExtension("go")
 	if !ok {
 		t.Error("Should find highlighter by extension without dot")
 	}

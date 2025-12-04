@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -64,7 +65,7 @@ func TestInsert(t *testing.T) {
 		t.Errorf("expected %q, got %q", "Hello", e.Text())
 	}
 
-	end, err = e.Insert(5, ", World!")
+	_, err = e.Insert(5, ", World!")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -644,22 +645,22 @@ func TestReadOnly(t *testing.T) {
 	}
 
 	_, err := e.Insert(0, "text")
-	if err != ErrReadOnly {
+	if !errors.Is(err, ErrReadOnly) {
 		t.Errorf("expected ErrReadOnly, got %v", err)
 	}
 
 	err = e.Delete(0, 1)
-	if err != ErrReadOnly {
+	if !errors.Is(err, ErrReadOnly) {
 		t.Errorf("expected ErrReadOnly, got %v", err)
 	}
 
 	_, err = e.Replace(0, 1, "x")
-	if err != ErrReadOnly {
+	if !errors.Is(err, ErrReadOnly) {
 		t.Errorf("expected ErrReadOnly, got %v", err)
 	}
 
 	err = e.Undo()
-	if err != ErrReadOnly {
+	if !errors.Is(err, ErrReadOnly) {
 		t.Errorf("expected ErrReadOnly, got %v", err)
 	}
 }
@@ -735,12 +736,12 @@ func TestConcurrentReadWrite(t *testing.T) {
 	// Writers
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		go func(i int) {
+		go func() {
 			defer wg.Done()
 			for j := 0; j < 10; j++ {
 				e.Insert(0, "x")
 			}
-		}(i)
+		}()
 	}
 
 	// Readers

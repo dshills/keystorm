@@ -213,7 +213,7 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 }
 
 // calculateLatencyStats computes average, max, and p99 from a slice of latencies.
-func calculateLatencyStats(latencies []time.Duration) (avg, max, p99 time.Duration) {
+func calculateLatencyStats(latencies []time.Duration) (avg, maxLat, p99 time.Duration) {
 	// Filter non-zero latencies
 	valid := make([]time.Duration, 0, len(latencies))
 	for _, l := range latencies {
@@ -230,8 +230,8 @@ func calculateLatencyStats(latencies []time.Duration) (avg, max, p99 time.Durati
 	var sum time.Duration
 	for _, l := range valid {
 		sum += l
-		if l > max {
-			max = l
+		if l > maxLat {
+			maxLat = l
 		}
 	}
 	avg = sum / time.Duration(len(valid))
@@ -254,7 +254,7 @@ func calculateLatencyStats(latencies []time.Duration) (avg, max, p99 time.Durati
 	}
 	p99 = sorted[idx]
 
-	return avg, max, p99
+	return avg, maxLat, p99
 }
 
 // Reset clears all metrics.
@@ -297,7 +297,7 @@ func (m *Metrics) DroppedEvents() uint64 {
 	return m.droppedEvents.Load()
 }
 
-// HealthCheck performs a basic health check on input processing.
+// HealthStatus represents the current health status of input processing.
 type HealthStatus struct {
 	Healthy          bool
 	DroppedEvents    uint64

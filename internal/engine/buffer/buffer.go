@@ -107,16 +107,17 @@ func NewBufferFromReader(r io.Reader, opts ...Option) (*Buffer, error) {
 
 // normalizeLineEndings converts all line endings to the buffer's preferred style.
 func (b *Buffer) normalizeLineEndings(s string) string {
-	if b.lineEnding == LineEndingLF {
+	switch b.lineEnding {
+	case LineEndingLF:
 		// Normalize CRLF and CR to LF
 		s = strings.ReplaceAll(s, "\r\n", "\n")
 		s = strings.ReplaceAll(s, "\r", "\n")
-	} else if b.lineEnding == LineEndingCRLF {
+	case LineEndingCRLF:
 		// First normalize to LF, then convert to CRLF
 		s = strings.ReplaceAll(s, "\r\n", "\n")
 		s = strings.ReplaceAll(s, "\r", "\n")
 		s = strings.ReplaceAll(s, "\n", "\r\n")
-	} else if b.lineEnding == LineEndingCR {
+	case LineEndingCR:
 		// Normalize CRLF and LF to CR
 		s = strings.ReplaceAll(s, "\r\n", "\r")
 		s = strings.ReplaceAll(s, "\n", "\r")
@@ -333,7 +334,7 @@ func (b *Buffer) ApplyEdit(edit Edit) (EditResult, error) {
 		OldRange: edit.Range,
 		NewRange: Range{Start: edit.Range.Start, End: newEnd},
 		OldText:  oldText,
-		Delta:    int64(len(text)) - int64(edit.Range.Len()),
+		Delta:    int64(len(text)) - (edit.Range.End - edit.Range.Start),
 	}, nil
 }
 

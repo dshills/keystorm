@@ -94,8 +94,9 @@ func TestBuiltInThemes(t *testing.T) {
 			if theme.Name == "" {
 				t.Error("Theme name should not be empty")
 			}
+			// Light theme might use default colors, others should have explicit background
 			if theme.Background == core.ColorDefault && theme.Name != "Light" {
-				// Light theme might use default colors
+				t.Logf("Theme %q uses default background color", theme.Name)
 			}
 			if len(theme.TokenStyles) == 0 {
 				t.Error("Theme should have token styles")
@@ -135,7 +136,7 @@ func TestThemeRegistry(t *testing.T) {
 	t.Run("current theme", func(t *testing.T) {
 		current := registry.Current()
 		if current == nil {
-			t.Error("Current() should not return nil")
+			t.Fatal("Current() should not return nil")
 		}
 		if current.Name != "Default Dark" {
 			t.Errorf("Default current theme should be 'Default Dark', got %q", current.Name)

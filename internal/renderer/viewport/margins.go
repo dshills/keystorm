@@ -169,7 +169,7 @@ func (v *Viewport) NeedsScrollForCursor(line uint32, col int) bool {
 	return vZone != ZoneCenter || hZone != ZoneCenter
 }
 
-// VisibleContentArea returns the area of the viewport inside all margins.
+// ContentArea represents the visible content area accounting for margins.
 // This is the "comfortable" zone where the cursor can be without triggering scroll.
 type ContentArea struct {
 	StartLine   uint32 // Inclusive

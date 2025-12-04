@@ -411,7 +411,7 @@ func TestLineCacheConcurrentAccess(t *testing.T) {
 
 	// Multiple goroutines reading/writing
 	for i := 0; i < 10; i++ {
-		go func(id int) {
+		go func() {
 			for j := 0; j < 100; j++ {
 				line := uint32(j % 50)
 				cache.Get(line, "Content")
@@ -420,7 +420,7 @@ func TestLineCacheConcurrentAccess(t *testing.T) {
 				}
 			}
 			done <- true
-		}(i)
+		}()
 	}
 
 	// Wait for all goroutines

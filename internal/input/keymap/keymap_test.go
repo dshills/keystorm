@@ -666,7 +666,7 @@ func TestLoadDefaults(t *testing.T) {
 	seq, _ := key.ParseSequence("j")
 	binding := reg.Lookup(seq, ctx)
 	if binding == nil {
-		t.Error("Should find 'j' binding in normal mode")
+		t.Fatal("Should find 'j' binding in normal mode")
 	}
 	if binding.Action != "cursor.down" {
 		t.Errorf("'j' action = %q, want %q", binding.Action, "cursor.down")
@@ -676,7 +676,7 @@ func TestLoadDefaults(t *testing.T) {
 	seq, _ = key.ParseSequence("g g")
 	binding = reg.Lookup(seq, ctx)
 	if binding == nil {
-		t.Error("Should find 'g g' binding in normal mode")
+		t.Fatal("Should find 'g g' binding in normal mode")
 	}
 	if binding.Action != "cursor.documentStart" {
 		t.Errorf("'g g' action = %q, want %q", binding.Action, "cursor.documentStart")
@@ -687,7 +687,7 @@ func TestLoadDefaults(t *testing.T) {
 	seq, _ = key.ParseSequence("Esc")
 	binding = reg.Lookup(seq, ctx)
 	if binding == nil {
-		t.Error("Should find 'Esc' binding in insert mode")
+		t.Fatal("Should find 'Esc' binding in insert mode")
 	}
 	if binding.Action != "mode.normal" {
 		t.Errorf("'Esc' action = %q, want %q", binding.Action, "mode.normal")

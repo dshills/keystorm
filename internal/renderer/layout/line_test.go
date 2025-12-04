@@ -116,8 +116,8 @@ func TestLayoutTabExpansion(t *testing.T) {
 				t.Errorf("got width %d, want %d", layout.Width, tt.width)
 			}
 			if tt.input != "hello" && tt.input != "" {
-				if !layout.HasTabs && tt.input[0] == '\t' || containsTab(tt.input) {
-					// Only check HasTabs if input contains tabs
+				if containsTab(tt.input) && !layout.HasTabs {
+					t.Errorf("Layout should have HasTabs=true for input with tabs")
 				}
 			}
 		})

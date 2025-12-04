@@ -310,18 +310,18 @@ func (h *History) PeekRedo() (OperationInfo, bool) {
 
 // SetMaxEntries changes the maximum number of undo entries.
 // If the current stack is larger, oldest entries are removed.
-func (h *History) SetMaxEntries(max int) {
-	if max <= 0 {
-		max = 1000
+func (h *History) SetMaxEntries(maxEntries int) {
+	if maxEntries <= 0 {
+		maxEntries = 1000
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.maxEntries = max
+	h.maxEntries = maxEntries
 
-	if len(h.undoStack) > max {
-		excess := len(h.undoStack) - max
+	if len(h.undoStack) > maxEntries {
+		excess := len(h.undoStack) - maxEntries
 		h.undoStack = h.undoStack[excess:]
 	}
 }

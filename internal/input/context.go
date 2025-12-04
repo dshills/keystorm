@@ -179,7 +179,7 @@ func (c *Context) ClearSequence() {
 	c.PendingSequence = nil
 }
 
-// UpdateFromEditor updates context from editor state.
+// EditorStateProvider provides editor state for context updates.
 type EditorStateProvider interface {
 	// Mode returns the current editor mode.
 	Mode() string

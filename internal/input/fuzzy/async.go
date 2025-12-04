@@ -108,9 +108,9 @@ func (m *AsyncMatcher) MatchParallel(ctx context.Context, query string, items []
 			// Use top-k heap if limit is specified
 			var chunkResults []Result
 			if workerLimit > 0 {
-				chunkResults = m.matchChunkTopK(queryRunes, chunk, workerLimit, ctx)
+				chunkResults = m.matchChunkTopK(ctx, queryRunes, chunk, workerLimit)
 			} else {
-				chunkResults = m.matchChunkAll(queryRunes, chunk, ctx)
+				chunkResults = m.matchChunkAll(ctx, queryRunes, chunk)
 			}
 
 			select {
@@ -149,7 +149,7 @@ func (m *AsyncMatcher) MatchParallel(ctx context.Context, query string, items []
 }
 
 // matchChunkTopK matches items in a chunk and keeps only top-k results.
-func (m *AsyncMatcher) matchChunkTopK(queryRunes []rune, chunk []Item, k int, ctx context.Context) []Result {
+func (m *AsyncMatcher) matchChunkTopK(ctx context.Context, queryRunes []rune, chunk []Item, k int) []Result {
 	h := &resultHeap{}
 	heap.Init(h)
 
@@ -184,7 +184,7 @@ func (m *AsyncMatcher) matchChunkTopK(queryRunes []rune, chunk []Item, k int, ct
 }
 
 // matchChunkAll matches all items in a chunk (no limit).
-func (m *AsyncMatcher) matchChunkAll(queryRunes []rune, chunk []Item, ctx context.Context) []Result {
+func (m *AsyncMatcher) matchChunkAll(ctx context.Context, queryRunes []rune, chunk []Item) []Result {
 	results := make([]Result, 0, len(chunk)/4)
 
 	for _, item := range chunk {
@@ -290,9 +290,9 @@ func (m *AsyncMatcher) collectResultsTopK(ctx context.Context, queryRunes []rune
 
 			var localResults []Result
 			if workerLimit > 0 {
-				localResults = m.matchChunkTopK(queryRunes, chunk, workerLimit, ctx)
+				localResults = m.matchChunkTopK(ctx, queryRunes, chunk, workerLimit)
 			} else {
-				localResults = m.matchChunkAll(queryRunes, chunk, ctx)
+				localResults = m.matchChunkAll(ctx, queryRunes, chunk)
 			}
 
 			mu.Lock()
@@ -313,7 +313,7 @@ func (h resultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score } // Mi
 func (h resultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *resultHeap) Push(x any) {
-	*h = append(*h, x.(Result))
+	*h = append(*h, x.(Result)) //nolint:errcheck // heap.Interface requires any; we only push Result
 }
 
 func (h *resultHeap) Pop() any {
@@ -350,7 +350,7 @@ func NewStreamingMatcher(matcher *Matcher) *StreamingMatcher {
 	}
 }
 
-// Search starts a new search, cancelling any previous search.
+// Search starts a new search, canceling any previous search.
 // Returns a channel that receives results.
 // Uses context.Background() internally; use SearchWithContext for custom context.
 func (m *StreamingMatcher) Search(query string, items []Item, limit int) <-chan Result {
@@ -359,7 +359,7 @@ func (m *StreamingMatcher) Search(query string, items []Item, limit int) <-chan 
 
 // SearchWithContext starts a new search with a custom context.
 // The provided context is used in addition to internal cancellation.
-// Cancelling any previous search before starting the new one.
+// Canceling any previous search before starting the new one.
 func (m *StreamingMatcher) SearchWithContext(ctx context.Context, query string, items []Item, limit int) <-chan Result {
 	m.mu.Lock()
 

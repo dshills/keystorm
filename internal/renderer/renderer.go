@@ -372,11 +372,8 @@ func (r *Renderer) render() {
 	// Calculate gutter width
 	r.gutterWidth = r.calculateGutterWidth()
 
-	// Update viewport content width
-	contentWidth := r.width - r.gutterWidth
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
+	// Update viewport content width (unused for now but needed for horizontal scroll)
+	_ = r.width - r.gutterWidth
 
 	// Clear screen if full redraw
 	if r.fullRedraw {

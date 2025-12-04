@@ -423,10 +423,10 @@ func TestTracker(t *testing.T) {
 // TestLineDiff tests the Myers diff algorithm
 func TestLineDiff(t *testing.T) {
 	t.Run("identical content", func(t *testing.T) {
-		old := rope.FromString("hello\nworld")
-		new := rope.FromString("hello\nworld")
+		oldRope := rope.FromString("hello\nworld")
+		newRope := rope.FromString("hello\nworld")
 
-		result := ComputeLineDiff(old, new, DefaultDiffOptions())
+		result := ComputeLineDiff(oldRope, newRope, DefaultDiffOptions())
 
 		if result.HasChanges() {
 			t.Error("identical content should have no changes")
@@ -434,10 +434,10 @@ func TestLineDiff(t *testing.T) {
 	})
 
 	t.Run("simple insert", func(t *testing.T) {
-		old := rope.FromString("line1\nline3")
-		new := rope.FromString("line1\nline2\nline3")
+		oldRope := rope.FromString("line1\nline3")
+		newRope := rope.FromString("line1\nline2\nline3")
 
-		result := ComputeLineDiff(old, new, DefaultDiffOptions())
+		result := ComputeLineDiff(oldRope, newRope, DefaultDiffOptions())
 
 		if !result.HasChanges() {
 			t.Error("should have changes")
@@ -448,10 +448,10 @@ func TestLineDiff(t *testing.T) {
 	})
 
 	t.Run("simple delete", func(t *testing.T) {
-		old := rope.FromString("line1\nline2\nline3")
-		new := rope.FromString("line1\nline3")
+		oldRope := rope.FromString("line1\nline2\nline3")
+		newRope := rope.FromString("line1\nline3")
 
-		result := ComputeLineDiff(old, new, DefaultDiffOptions())
+		result := ComputeLineDiff(oldRope, newRope, DefaultDiffOptions())
 
 		if !result.HasChanges() {
 			t.Error("should have changes")
@@ -470,10 +470,10 @@ func TestLineDiff(t *testing.T) {
 	})
 
 	t.Run("empty old", func(t *testing.T) {
-		old := rope.FromString("")
-		new := rope.FromString("hello\nworld")
+		oldRope := rope.FromString("")
+		newRope := rope.FromString("hello\nworld")
 
-		result := ComputeLineDiff(old, new, DefaultDiffOptions())
+		result := ComputeLineDiff(oldRope, newRope, DefaultDiffOptions())
 
 		if !result.HasChanges() {
 			t.Error("should have changes")
@@ -484,10 +484,10 @@ func TestLineDiff(t *testing.T) {
 	})
 
 	t.Run("empty new", func(t *testing.T) {
-		old := rope.FromString("hello\nworld")
-		new := rope.FromString("")
+		oldRope := rope.FromString("hello\nworld")
+		newRope := rope.FromString("")
 
-		result := ComputeLineDiff(old, new, DefaultDiffOptions())
+		result := ComputeLineDiff(oldRope, newRope, DefaultDiffOptions())
 
 		if !result.HasChanges() {
 			t.Error("should have changes")
@@ -518,10 +518,10 @@ func TestLineDiff(t *testing.T) {
 
 // TestUnifiedDiff tests unified diff output
 func TestUnifiedDiff(t *testing.T) {
-	old := rope.FromString("line1\nline2\nline3")
-	new := rope.FromString("line1\nmodified\nline3")
+	oldRope := rope.FromString("line1\nline2\nline3")
+	newRope := rope.FromString("line1\nmodified\nline3")
 
-	result := ComputeLineDiff(old, new, DefaultDiffOptions())
+	result := ComputeLineDiff(oldRope, newRope, DefaultDiffOptions())
 	unified := UnifiedDiff(result, "old.txt", "new.txt")
 
 	if unified == "" {
@@ -633,13 +633,13 @@ func BenchmarkTrackerChangesSince(b *testing.B) {
 }
 
 func BenchmarkLineDiffSmall(b *testing.B) {
-	old := rope.FromString("line1\nline2\nline3\nline4\nline5")
-	new := rope.FromString("line1\nmodified\nline3\nline4\nline5")
+	oldRope := rope.FromString("line1\nline2\nline3\nline4\nline5")
+	newRope := rope.FromString("line1\nmodified\nline3\nline4\nline5")
 	opts := DefaultDiffOptions()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ComputeLineDiff(old, new, opts)
+		_ = ComputeLineDiff(oldRope, newRope, opts)
 	}
 }
 
@@ -655,13 +655,13 @@ func BenchmarkLineDiffLarge(b *testing.B) {
 		}
 	}
 
-	old := rope.FromString(oldLines)
-	new := rope.FromString(newLines)
+	oldRope := rope.FromString(oldLines)
+	newRope := rope.FromString(newLines)
 	opts := DefaultDiffOptions()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ComputeLineDiff(old, new, opts)
+		_ = ComputeLineDiff(oldRope, newRope, opts)
 	}
 }
 

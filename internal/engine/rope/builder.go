@@ -141,7 +141,7 @@ func FromLines(lines []string) Rope {
 	for i, line := range lines {
 		builder.WriteString(line)
 		if i < len(lines)-1 {
-			builder.WriteByte('\n')
+			_ = builder.WriteByte('\n') // error impossible for strings.Builder
 		}
 	}
 

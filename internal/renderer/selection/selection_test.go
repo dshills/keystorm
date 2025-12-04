@@ -276,10 +276,9 @@ func TestManagerStartSelection(t *testing.T) {
 	if primary.Type != TypeLine {
 		t.Error("Selection type should be TypeLine")
 	}
-	if m.IsActive() {
-		// Start with same start/end should not be "active" (empty)
-		// But internally we track active = true
-	}
+	// Start with same start/end should not be "active" (empty)
+	// But internally we track active = true, so IsActive may return true
+	_ = m.IsActive() // result depends on internal implementation
 }
 
 func TestManagerExtendSelection(t *testing.T) {

@@ -45,7 +45,7 @@ func NewNodePool() *NodePool {
 // GetLeaf retrieves a leaf node from the pool.
 // The node is reset to empty state.
 func (p *NodePool) GetLeaf() *Node {
-	n := p.leafPool.Get().(*Node)
+	n := p.leafPool.Get().(*Node) //nolint:errcheck // Pool's New always returns *Node
 	n.height = 0
 	n.summary = TextSummary{}
 	n.chunks = n.chunks[:0]
@@ -57,7 +57,7 @@ func (p *NodePool) GetLeaf() *Node {
 // GetInternal retrieves an internal node from the pool.
 // The node is reset to empty state.
 func (p *NodePool) GetInternal(height uint8) *Node {
-	n := p.internalPool.Get().(*Node)
+	n := p.internalPool.Get().(*Node) //nolint:errcheck // Pool's New always returns *Node
 	n.height = height
 	n.summary = TextSummary{}
 	n.chunks = nil
@@ -117,7 +117,7 @@ var ChunkSlicePool = sync.Pool{
 
 // GetChunkSlice retrieves a chunk slice from the pool.
 func GetChunkSlice() *[]Chunk {
-	s := ChunkSlicePool.Get().(*[]Chunk)
+	s := ChunkSlicePool.Get().(*[]Chunk) //nolint:errcheck // Pool's New always returns *[]Chunk
 	*s = (*s)[:0]
 	return s
 }
@@ -145,7 +145,7 @@ var NodeSlicePool = sync.Pool{
 
 // GetNodeSlice retrieves a node slice from the pool.
 func GetNodeSlice() *[]*Node {
-	s := NodeSlicePool.Get().(*[]*Node)
+	s := NodeSlicePool.Get().(*[]*Node) //nolint:errcheck // Pool's New always returns *[]*Node
 	*s = (*s)[:0]
 	return s
 }
@@ -176,10 +176,10 @@ type stringBuilderWrapper struct {
 	buf []byte
 }
 
-// GetStringBuilder retrieves a string builder from the pool.
+// getStringBuilder retrieves a string builder from the pool.
 // Returns a slice that can be appended to.
-func GetStringBuilder(capacity int) *stringBuilderWrapper {
-	w := StringBuilderPool.Get().(*stringBuilderWrapper)
+func getStringBuilder(capacity int) *stringBuilderWrapper {
+	w := StringBuilderPool.Get().(*stringBuilderWrapper) //nolint:errcheck // Pool's New always returns *stringBuilderWrapper
 	if cap(w.buf) < capacity {
 		w.buf = make([]byte, 0, capacity)
 	} else {

@@ -344,7 +344,7 @@ func (t *PrefixTree) Remove(seq *key.Sequence, mode string, km *Keymap) {
 	// Remove matching entries (must match both mode and keymap)
 	filtered := node.entries[:0]
 	for _, entry := range node.entries {
-		if !(entry.Mode == mode && entry.Keymap == km) {
+		if entry.Mode != mode || entry.Keymap != km {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -369,6 +369,8 @@ func (t *PrefixTree) Remove(seq *key.Sequence, mode string, km *Keymap) {
 }
 
 // Lookup finds exact matches for a key sequence.
+//
+//nolint:revive // unexported-return: prefixEntry is internal implementation detail
 func (t *PrefixTree) Lookup(seq *key.Sequence, mode string) []prefixEntry {
 	node := t.root
 

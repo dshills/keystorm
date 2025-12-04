@@ -190,6 +190,8 @@ func (s *InputSystem) RecordMouseEvent() {
 }
 
 // dispatchAction sends an action through the system.
+//
+//nolint:unused // retained for future direct dispatch support
 func (s *InputSystem) dispatchAction(action Action) {
 	s.mu.RLock()
 	dispatcher := s.dispatcher
@@ -428,7 +430,9 @@ func (d *SimpleDispatcher) Dispatch(action Action) error {
 
 // DispatchAsync sends an action asynchronously.
 func (d *SimpleDispatcher) DispatchAsync(action Action) {
-	go d.Dispatch(action)
+	go func() {
+		_ = d.Dispatch(action) // fire-and-forget; errors logged in Dispatch
+	}()
 }
 
 // RegisterHandler registers a handler for a specific action.

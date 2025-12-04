@@ -79,7 +79,7 @@ type RegisterStore struct {
 	registers map[rune]*Register
 
 	// lastYankRegister tracks the last yank for register 0.
-	lastYankRegister *Register
+	lastYankRegister *Register //nolint:unused // for future register 0 support
 
 	// numberedRegisters are 1-9, rotating delete history.
 	numberedRegisters [9]*Register

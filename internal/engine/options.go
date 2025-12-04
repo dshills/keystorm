@@ -39,28 +39,28 @@ func WithLineEnding(ending buffer.LineEnding) Option {
 }
 
 // WithMaxUndoEntries sets the maximum number of undo history entries.
-func WithMaxUndoEntries(max int) Option {
+func WithMaxUndoEntries(maxEntries int) Option {
 	return func(e *Engine) {
-		if max > 0 {
-			e.maxUndoEntries = max
+		if maxEntries > 0 {
+			e.maxUndoEntries = maxEntries
 		}
 	}
 }
 
 // WithMaxChanges sets the maximum number of tracked changes.
-func WithMaxChanges(max int) Option {
+func WithMaxChanges(maxChanges int) Option {
 	return func(e *Engine) {
-		if max > 0 {
-			e.maxChanges = max
+		if maxChanges > 0 {
+			e.maxChanges = maxChanges
 		}
 	}
 }
 
 // WithMaxRevisions sets the maximum number of stored revisions.
-func WithMaxRevisions(max int) Option {
+func WithMaxRevisions(maxRevisions int) Option {
 	return func(e *Engine) {
-		if max > 0 {
-			e.maxRevisions = max
+		if maxRevisions > 0 {
+			e.maxRevisions = maxRevisions
 		}
 	}
 }

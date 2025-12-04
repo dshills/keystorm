@@ -19,17 +19,17 @@ type TrackerOption func(*Tracker)
 // WithMaxChanges sets the maximum number of changes to track.
 // IMPORTANT: This option must only be used during Tracker creation via NewTracker.
 // Applying it to an existing Tracker with recorded changes will discard those changes.
-func WithMaxChanges(max int) TrackerOption {
+func WithMaxChanges(maxChanges int) TrackerOption {
 	return func(t *Tracker) {
-		t.maxChanges = max
-		t.changes = make([]trackedChange, max)
+		t.maxChanges = maxChanges
+		t.changes = make([]trackedChange, maxChanges)
 	}
 }
 
 // WithMaxRevisions sets the maximum number of revisions to store.
-func WithMaxRevisions(max int) TrackerOption {
+func WithMaxRevisions(maxRevisions int) TrackerOption {
 	return func(t *Tracker) {
-		t.revisions = newRevisionStore(max)
+		t.revisions = newRevisionStore(maxRevisions)
 	}
 }
 
@@ -465,7 +465,7 @@ type AIContext struct {
 	Diff DiffResult
 }
 
-// ChangeInterface defines the interface for change tracking integration.
+// ChangeObserver defines the interface for change tracking integration.
 // This can be implemented by buffer types to enable automatic tracking.
 type ChangeObserver interface {
 	// OnChange is called when a change occurs.

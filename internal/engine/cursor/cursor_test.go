@@ -563,8 +563,8 @@ func TestComputeEditDelta(t *testing.T) {
 		t.Error("insert delta should be 5")
 	}
 
-	delete := Edit{Range: Range{Start: 0, End: 10}, NewText: ""}
-	if ComputeEditDelta(delete) != -10 {
+	del := Edit{Range: Range{Start: 0, End: 10}, NewText: ""}
+	if ComputeEditDelta(del) != -10 {
 		t.Error("delete delta should be -10")
 	}
 

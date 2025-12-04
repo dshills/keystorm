@@ -137,17 +137,17 @@ func (dr DiffResult) DeletedLines() int {
 
 // ComputeLineDiff computes line-based diff between two ropes.
 // Uses Myers diff algorithm for optimal results.
-func ComputeLineDiff(old, new rope.Rope, opts DiffOptions) DiffResult {
-	oldLines := toLines(old)
-	newLines := toLines(new)
+func ComputeLineDiff(oldRope, newRope rope.Rope, opts DiffOptions) DiffResult {
+	oldLines := toLines(oldRope)
+	newLines := toLines(newRope)
 
 	return computeLineDiffFromLines(oldLines, newLines, opts)
 }
 
 // ComputeLineDiffStrings computes line-based diff between two strings.
-func ComputeLineDiffStrings(old, new string, opts DiffOptions) DiffResult {
-	oldLines := strings.Split(old, "\n")
-	newLines := strings.Split(new, "\n")
+func ComputeLineDiffStrings(oldStr, newStr string, opts DiffOptions) DiffResult {
+	oldLines := strings.Split(oldStr, "\n")
+	newLines := strings.Split(newStr, "\n")
 
 	return computeLineDiffFromLines(oldLines, newLines, opts)
 }
@@ -214,9 +214,9 @@ func myersDiff(oldLines, newLines []string, opts DiffOptions) []editOp {
 	}
 
 	// Myers algorithm using slice-based V vector for efficiency
-	max := n + m
-	offset := max // V[-max..max] maps to slice[0..2*max]
-	v := make([]int, 2*max+1)
+	maxD := n + m
+	offset := maxD // V[-max..max] maps to slice[0..2*max]
+	v := make([]int, 2*maxD+1)
 
 	// Initialize V[1] = 0 as per Myers algorithm
 	v[offset+1] = 0
@@ -225,7 +225,7 @@ func myersDiff(oldLines, newLines []string, opts DiffOptions) []editOp {
 
 	// Forward pass to find shortest edit path
 outer:
-	for d := 0; d <= max; d++ {
+	for d := 0; d <= maxD; d++ {
 		// Save trace BEFORE processing this d (we need state from previous iteration)
 		vCopy := make([]int, len(v))
 		copy(vCopy, v)
@@ -280,7 +280,7 @@ func linesEqual(a, b string, opts DiffOptions) bool {
 }
 
 // backtrackSlice reconstructs the edit script from the trace using slice-based V.
-func backtrackSlice(trace [][]int, oldLines, newLines []string, offset int, opts DiffOptions) []editOp {
+func backtrackSlice(trace [][]int, oldLines, newLines []string, offset int, _ DiffOptions) []editOp {
 	n := len(oldLines)
 	m := len(newLines)
 

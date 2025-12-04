@@ -1,6 +1,7 @@
 package history
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/dshills/keystorm/internal/engine/buffer"
@@ -466,11 +467,11 @@ func TestHistoryErrors(t *testing.T) {
 	history := NewHistory(100)
 	buf, cursors := newTestBufferAndCursors("hello", 0)
 
-	if err := history.Undo(buf, cursors); err != ErrNothingToUndo {
+	if err := history.Undo(buf, cursors); !errors.Is(err, ErrNothingToUndo) {
 		t.Errorf("expected ErrNothingToUndo, got %v", err)
 	}
 
-	if err := history.Redo(buf, cursors); err != ErrNothingToRedo {
+	if err := history.Redo(buf, cursors); !errors.Is(err, ErrNothingToRedo) {
 		t.Errorf("expected ErrNothingToRedo, got %v", err)
 	}
 }
@@ -528,7 +529,7 @@ func TestHistoryCancelGroup(t *testing.T) {
 	}
 
 	if history.CanUndo() {
-		t.Error("cancelled group should not create undo entry")
+		t.Error("canceled group should not create undo entry")
 	}
 }
 

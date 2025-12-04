@@ -123,7 +123,7 @@ func (r *Recorder) Set(register rune, events []key.Event) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if events == nil || len(events) == 0 {
+	if len(events) == 0 {
 		delete(r.registers, register)
 		return nil
 	}

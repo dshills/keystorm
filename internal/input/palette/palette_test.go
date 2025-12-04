@@ -569,7 +569,7 @@ func TestCommandHandlerError(t *testing.T) {
 	})
 
 	err := p.Execute("test.err", nil)
-	if err != expectedErr {
+	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected handler error, got %v", err)
 	}
 }

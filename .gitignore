@@ -1,0 +1,99 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+gocreator
+!bin/gocreator
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+coverage.html
+*.coverprofile
+*_coverage.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Build artifacts
+bin/
+build/
+dist/
+*.a
+
+# IDE and editor files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace
+.fleet/
+.vimrc.local
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+.envrc
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.orig
+
+# OS files
+Thumbs.db
+.fuse_hidden*
+.directory
+.Trash-*
+
+# Specify framework artifacts
+.specify/memory/local/
+settings.local.json
+
+# Database files (for local development)
+*.db
+*.sqlite
+*.sqlite3
+
+# API keys and credentials (extra safety)
+*_credentials.json
+*_secret*.json
+secrets/
+credentials/
+
+
+review-results/
+
+# GoCreator specific artifacts
+.gocreator/
+generated/
+
+# GitHub Actions artifacts
+.github/workflows/*.log
+
+# Code coverage reports
+coverage/
+htmlcov/
+
+# Benchmarking results
+*.bench
+bench/

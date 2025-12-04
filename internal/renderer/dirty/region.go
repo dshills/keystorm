@@ -171,16 +171,16 @@ func (r Region) Merge(other Region) (Region, bool) {
 	}
 
 	merged := Region{
-		StartLine: min(r.StartLine, other.StartLine),
-		EndLine:   max(r.EndLine, other.EndLine),
+		StartLine: minU32(r.StartLine, other.StartLine),
+		EndLine:   maxU32(r.EndLine, other.EndLine),
 	}
 
 	// If either is full width, result is full width
 	if r.FullWidth || other.FullWidth {
 		merged.FullWidth = true
 	} else {
-		merged.StartCol = min(r.StartCol, other.StartCol)
-		merged.EndCol = max(r.EndCol, other.EndCol)
+		merged.StartCol = minU32(r.StartCol, other.StartCol)
+		merged.EndCol = maxU32(r.EndCol, other.EndCol)
 	}
 
 	return merged, true
@@ -232,8 +232,8 @@ func (r Region) Intersect(other Region) Region {
 	}
 
 	result := Region{
-		StartLine: max(r.StartLine, other.StartLine),
-		EndLine:   min(r.EndLine, other.EndLine),
+		StartLine: maxU32(r.StartLine, other.StartLine),
+		EndLine:   minU32(r.EndLine, other.EndLine),
 	}
 
 	if r.FullWidth && other.FullWidth {
@@ -245,8 +245,8 @@ func (r Region) Intersect(other Region) Region {
 		result.StartCol = r.StartCol
 		result.EndCol = r.EndCol
 	} else {
-		result.StartCol = max(r.StartCol, other.StartCol)
-		result.EndCol = min(r.EndCol, other.EndCol)
+		result.StartCol = maxU32(r.StartCol, other.StartCol)
+		result.EndCol = minU32(r.EndCol, other.EndCol)
 	}
 
 	return result
@@ -261,16 +261,16 @@ func (r Region) Equals(other Region) bool {
 		r.FullWidth == other.FullWidth
 }
 
-// min returns the smaller of two uint32 values.
-func min(a, b uint32) uint32 {
+// minU32 returns the smaller of two uint32 values.
+func minU32(a, b uint32) uint32 {
 	if a < b {
 		return a
 	}
 	return b
 }
 
-// max returns the larger of two uint32 values.
-func max(a, b uint32) uint32 {
+// maxU32 returns the larger of two uint32 values.
+func maxU32(a, b uint32) uint32 {
 	if a > b {
 		return a
 	}

@@ -260,7 +260,7 @@ func TestGoHighlighterMultiLineComment(t *testing.T) {
 	}
 
 	// End of comment
-	tokens, state = h.HighlightLine("end of comment */", state)
+	_, state = h.HighlightLine("end of comment */", state)
 	if state != LexerStateNormal {
 		t.Error("Should return to normal state after */")
 	}
@@ -270,19 +270,19 @@ func TestGoHighlighterBacktickString(t *testing.T) {
 	h := GoHighlighter()
 
 	// Start raw string
-	tokens, state := h.HighlightLine("s := `multi-line", LexerStateNormal)
+	_, state := h.HighlightLine("s := `multi-line", LexerStateNormal)
 	if state != LexerStateStringBacktick {
 		t.Errorf("State = %v, want LexerStateStringBacktick", state)
 	}
 
 	// Continue string
-	tokens, state = h.HighlightLine("still in string", state)
+	tokens, state := h.HighlightLine("still in string", state)
 	if len(tokens) != 1 || tokens[0].Type != TokenString {
 		t.Error("Entire line should be string")
 	}
 
 	// End string
-	tokens, state = h.HighlightLine("end` + x", state)
+	_, state = h.HighlightLine("end` + x", state)
 	if state != LexerStateNormal {
 		t.Error("Should return to normal after backtick")
 	}

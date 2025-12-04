@@ -81,6 +81,8 @@ func (t *clickTracker) reset() {
 }
 
 // lastClickCount returns the last recorded click count.
+//
+//nolint:unused // retained for future click tracking API
 func (t *clickTracker) lastClickCount() int {
 	return t.lastCount
 }

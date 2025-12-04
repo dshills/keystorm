@@ -312,9 +312,9 @@ func TestComputeSimpleDiff(t *testing.T) {
 	})
 
 	t.Run("mixed changes", func(t *testing.T) {
-		old := []string{"a", "b", "c"}
-		new := []string{"a", "x", "c"}
-		hunks := computeSimpleDiff(0, old, new)
+		oldLines := []string{"a", "b", "c"}
+		newLines := []string{"a", "x", "c"}
+		hunks := computeSimpleDiff(0, oldLines, newLines)
 
 		// Should detect change in middle
 		if len(hunks) == 0 {

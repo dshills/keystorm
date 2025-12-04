@@ -427,14 +427,14 @@ func (t *Tracker) RegionCount() int {
 
 // SetMaxRegions sets the maximum number of regions before forcing full redraw.
 // Values less than 1 are clamped to 1.
-func (t *Tracker) SetMaxRegions(max int) {
+func (t *Tracker) SetMaxRegions(maxRegs int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if max < 1 {
-		max = 1
+	if maxRegs < 1 {
+		maxRegs = 1
 	}
-	t.maxRegions = max
+	t.maxRegions = maxRegs
 }
 
 // SetCoalesceThreshold sets the dirty area threshold for triggering full redraw.

@@ -405,6 +405,8 @@ func (n *Node) findChildByOffset(offset ByteOffset) (int, ByteOffset) {
 
 // findChildByLine finds the child containing the given line number.
 // Returns the child index and the line number within that child.
+//
+//nolint:unused // retained for future line-based operations
 func (n *Node) findChildByLine(line uint32) (int, uint32) {
 	if n.IsLeaf() {
 		return -1, 0

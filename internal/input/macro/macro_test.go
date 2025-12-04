@@ -2,6 +2,7 @@ package macro
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -509,7 +510,7 @@ func TestPlayerCancel(t *testing.T) {
 
 	mu.Lock()
 	if count >= 100*1000 {
-		t.Errorf("playback should have been cancelled, but all events played")
+		t.Errorf("playback should have been canceled, but all events played")
 	}
 	mu.Unlock()
 }
@@ -541,14 +542,14 @@ func TestPlayerWithContext(t *testing.T) {
 		time.Sleep(time.Microsecond)
 	})
 
-	// Should have been cancelled
-	if err != context.Canceled {
+	// Should have been canceled
+	if !errors.Is(err, context.Canceled) {
 		t.Logf("PlayWithContext returned: %v (count=%d)", err, count)
 	}
 
 	mu.Lock()
 	if count >= 100*100 {
-		t.Error("playback should have been cancelled")
+		t.Error("playback should have been canceled")
 	}
 	mu.Unlock()
 }

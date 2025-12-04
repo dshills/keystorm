@@ -82,16 +82,16 @@ func NewContext() *Context {
 
 // WithEditor returns a copy of the context with the given editor state.
 func (c *Context) WithEditor(editor EditorState) *Context {
-	copy := *c
-	copy.Editor = editor
-	return &copy
+	cpy := *c
+	cpy.Editor = editor
+	return &cpy
 }
 
 // WithCount returns a copy of the context with the given count.
 func (c *Context) WithCount(count int) *Context {
-	copy := *c
-	copy.Count = count
-	return &copy
+	cpy := *c
+	cpy.Count = count
+	return &cpy
 }
 
 // CursorStyle defines the visual appearance of the cursor.

@@ -154,7 +154,7 @@ func (bm *BindingMatch) CalculateScore() {
 	bm.Score = bm.Keymap.Priority * 100
 
 	// Add binding priority
-	bm.Score += bm.ParsedBinding.Priority
+	bm.Score += bm.Priority
 
 	// Bonus for mode-specific bindings
 	if bm.Keymap.Mode != "" {
