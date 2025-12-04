@@ -77,6 +77,9 @@ type Handler struct {
 
 	// Closed flag
 	closed bool
+
+	// Error from loading default keymaps (if any)
+	keymapLoadErr error
 }
 
 // Hook allows interception and modification of input handling.
@@ -94,6 +97,8 @@ type Hook interface {
 }
 
 // NewHandler creates a new input handler.
+// Note: Errors loading default keymaps are stored and can be retrieved via
+// KeymapLoadError(). The handler remains functional without default keymaps.
 func NewHandler(config Config) *Handler {
 	h := &Handler{
 		config:         config,
@@ -107,10 +112,8 @@ func NewHandler(config Config) *Handler {
 	// Register default modes
 	h.registerDefaultModes()
 
-	// Load default keymaps
-	if err := keymap.LoadDefaults(h.keymapRegistry); err != nil {
-		// Log error but continue - keymaps can be loaded later
-	}
+	// Load default keymaps - store error for later retrieval
+	h.keymapLoadErr = keymap.LoadDefaults(h.keymapRegistry)
 
 	// Set initial mode
 	h.context.Mode = config.DefaultMode
@@ -138,17 +141,33 @@ func (h *Handler) registerDefaultModes() {
 // HandleKeyEvent processes a key event.
 func (h *Handler) HandleKeyEvent(event key.Event) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	if h.closed {
+		h.mu.Unlock()
 		return
 	}
 
-	// Run pre-hooks
-	for _, hook := range h.hooks {
-		if hook.PreKeyEvent(&event, h.context) {
+	// Copy hooks slice and context for safe invocation outside lock
+	hooks := make([]Hook, len(h.hooks))
+	copy(hooks, h.hooks)
+	ctxClone := h.context.Clone()
+
+	h.mu.Unlock()
+
+	// Run pre-hooks outside lock to avoid deadlock if hooks call back into Handler
+	eventCopy := event // Copy to avoid pointer retention issues
+	for _, hook := range hooks {
+		if hook.PreKeyEvent(&eventCopy, ctxClone) {
 			return // Hook consumed the event
 		}
+	}
+
+	// Re-acquire lock for state modification
+	h.mu.Lock()
+
+	if h.closed {
+		h.mu.Unlock()
+		return
 	}
 
 	// Add to pending sequence
@@ -160,9 +179,14 @@ func (h *Handler) HandleKeyEvent(event key.Event) {
 	// Try to resolve the sequence
 	action := h.resolveSequence()
 
-	// Run post-hooks
-	for _, hook := range h.hooks {
-		hook.PostKeyEvent(&event, action, h.context)
+	// Copy context again for post-hooks
+	ctxClone = h.context.Clone()
+
+	h.mu.Unlock()
+
+	// Run post-hooks outside lock
+	for _, hook := range hooks {
+		hook.PostKeyEvent(&eventCopy, action, ctxClone)
 	}
 }
 
@@ -208,14 +232,26 @@ func (h *Handler) buildLookupContext() *keymap.LookupContext {
 	ctx.Mode = h.context.Mode
 	ctx.FileType = h.context.FileType
 
-	// Copy conditions
-	for k, v := range h.context.Conditions {
-		ctx.Conditions[k] = v
+	// Defensively initialize maps before copying
+	if ctx.Conditions == nil {
+		ctx.Conditions = make(map[string]bool)
+	}
+	if ctx.Variables == nil {
+		ctx.Variables = make(map[string]string)
+	}
+
+	// Copy conditions with preallocated capacity for better performance
+	if len(h.context.Conditions) > 0 {
+		for k, v := range h.context.Conditions {
+			ctx.Conditions[k] = v
+		}
 	}
 
 	// Copy variables
-	for k, v := range h.context.Variables {
-		ctx.Variables[k] = v
+	if len(h.context.Variables) > 0 {
+		for k, v := range h.context.Variables {
+			ctx.Variables[k] = v
+		}
 	}
 
 	return ctx
@@ -258,7 +294,15 @@ func (h *Handler) handleUnmatchedSequence(currentMode mode.Mode) *Action {
 	}
 
 	// Process each event through the mode's HandleUnmapped
-	for _, event := range h.context.PendingSequence.Events {
+	// Use At() accessor instead of directly accessing Events field
+	seqLen := h.context.PendingSequence.Len()
+	for i := 0; i < seqLen; i++ {
+		eventPtr := h.context.PendingSequence.At(i)
+		if eventPtr == nil {
+			continue
+		}
+		event := *eventPtr
+
 		result := currentMode.HandleUnmapped(event, modeCtx)
 		if result == nil || !result.Consumed {
 			continue
@@ -294,12 +338,29 @@ func (h *Handler) handleUnmatchedSequence(currentMode mode.Mode) *Action {
 }
 
 // dispatchAction sends an action to the output channel.
+// Caller must hold the lock. This method will temporarily release the lock
+// to invoke hooks safely, then re-acquire it.
 func (h *Handler) dispatchAction(action Action) {
-	// Run pre-action hooks
-	for _, hook := range h.hooks {
-		if hook.PreAction(&action, h.context) {
-			return // Hook consumed the action
+	// Copy hooks and context for safe invocation outside lock
+	hooks := make([]Hook, len(h.hooks))
+	copy(hooks, h.hooks)
+	ctxClone := h.context.Clone()
+
+	h.mu.Unlock()
+
+	// Run pre-action hooks outside lock to avoid deadlock
+	consumed := false
+	for _, hook := range hooks {
+		if hook.PreAction(&action, ctxClone) {
+			consumed = true
+			break
 		}
+	}
+
+	h.mu.Lock()
+
+	if consumed {
+		return // Hook consumed the action
 	}
 
 	// Clear pending state after action
@@ -307,7 +368,10 @@ func (h *Handler) dispatchAction(action Action) {
 	h.context.PendingRegister = 0
 	h.context.PendingOperator = ""
 
-	// Non-blocking send with overflow protection
+	// Non-blocking send with overflow protection.
+	// Note: If the channel is full, the oldest action is dropped to make room.
+	// This prevents blocking the input handler but may lose actions if the
+	// consumer is too slow.
 	select {
 	case h.actionChan <- action:
 	default:
@@ -377,6 +441,12 @@ func (h *Handler) ModeManager() *mode.Manager {
 // KeymapRegistry returns the keymap registry.
 func (h *Handler) KeymapRegistry() *keymap.Registry {
 	return h.keymapRegistry
+}
+
+// KeymapLoadError returns the error from loading default keymaps, if any.
+// This allows callers to log or handle keymap loading failures during initialization.
+func (h *Handler) KeymapLoadError() error {
+	return h.keymapLoadErr
 }
 
 // Context returns a copy of the current context.

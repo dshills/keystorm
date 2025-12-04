@@ -62,6 +62,7 @@ func NewContext() *Context {
 }
 
 // Clone returns a deep copy of the context.
+// Nil maps are preserved as nil in the clone (not converted to empty maps).
 func (c *Context) Clone() *Context {
 	clone := &Context{
 		Mode:            c.Mode,
@@ -75,15 +76,21 @@ func (c *Context) Clone() *Context {
 		PendingOperator: c.PendingOperator,
 		PendingCount:    c.PendingCount,
 		PendingRegister: c.PendingRegister,
-		Conditions:      make(map[string]bool, len(c.Conditions)),
-		Variables:       make(map[string]string, len(c.Variables)),
 	}
 
-	for k, v := range c.Conditions {
-		clone.Conditions[k] = v
+	// Preserve nil vs empty map semantics
+	if c.Conditions != nil {
+		clone.Conditions = make(map[string]bool, len(c.Conditions))
+		for k, v := range c.Conditions {
+			clone.Conditions[k] = v
+		}
 	}
-	for k, v := range c.Variables {
-		clone.Variables[k] = v
+
+	if c.Variables != nil {
+		clone.Variables = make(map[string]string, len(c.Variables))
+		for k, v := range c.Variables {
+			clone.Variables[k] = v
+		}
 	}
 
 	if c.PendingSequence != nil {
