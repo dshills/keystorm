@@ -8,6 +8,7 @@ import (
 
 	"github.com/dshills/keystorm/internal/dispatcher/execctx"
 	"github.com/dshills/keystorm/internal/dispatcher/handler"
+	"github.com/dshills/keystorm/internal/dispatcher/hook"
 	"github.com/dshills/keystorm/internal/input"
 )
 
@@ -32,9 +33,12 @@ type Dispatcher struct {
 	// Metrics
 	metrics *Metrics
 
-	// Hooks
+	// Hooks (legacy simple hooks)
 	preHooks  []PreDispatchHook
 	postHooks []PostDispatchHook
+
+	// Hook manager for priority-based hooks
+	hookManager *hook.Manager
 
 	// Async dispatch
 	actionChan chan input.Action
@@ -298,13 +302,25 @@ func (d *Dispatcher) RegisterPostHook(hook PostDispatchHook) {
 // runPreHooks runs all pre-dispatch hooks.
 // Returns false if any hook cancels the action.
 func (d *Dispatcher) runPreHooks(action *input.Action, ctx *execctx.ExecutionContext) bool {
+	// Run hook manager first (priority-based hooks)
+	d.mu.RLock()
+	manager := d.hookManager
+	d.mu.RUnlock()
+
+	if manager != nil {
+		if !manager.RunPreDispatch(action, ctx) {
+			return false
+		}
+	}
+
+	// Then run legacy simple hooks
 	d.mu.RLock()
 	hooks := make([]PreDispatchHook, len(d.preHooks))
 	copy(hooks, d.preHooks)
 	d.mu.RUnlock()
 
-	for _, hook := range hooks {
-		if !hook.PreDispatch(action, ctx) {
+	for _, h := range hooks {
+		if !h.PreDispatch(action, ctx) {
 			return false
 		}
 	}
@@ -313,13 +329,23 @@ func (d *Dispatcher) runPreHooks(action *input.Action, ctx *execctx.ExecutionCon
 
 // runPostHooks runs all post-dispatch hooks.
 func (d *Dispatcher) runPostHooks(action *input.Action, ctx *execctx.ExecutionContext, result *handler.Result) {
+	// Run legacy simple hooks first
 	d.mu.RLock()
 	hooks := make([]PostDispatchHook, len(d.postHooks))
 	copy(hooks, d.postHooks)
 	d.mu.RUnlock()
 
-	for _, hook := range hooks {
-		hook.PostDispatch(action, ctx, result)
+	for _, h := range hooks {
+		h.PostDispatch(action, ctx, result)
+	}
+
+	// Then run hook manager (priority-based hooks)
+	d.mu.RLock()
+	manager := d.hookManager
+	d.mu.RUnlock()
+
+	if manager != nil {
+		manager.RunPostDispatch(action, ctx, result)
 	}
 }
 
@@ -389,4 +415,30 @@ func (d *Dispatcher) Metrics() *Metrics {
 // Config returns the dispatcher configuration.
 func (d *Dispatcher) Config() Config {
 	return d.config
+}
+
+// HookManager returns the hook manager (may be nil).
+func (d *Dispatcher) HookManager() *hook.Manager {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.hookManager
+}
+
+// SetHookManager sets the hook manager.
+func (d *Dispatcher) SetHookManager(manager *hook.Manager) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.hookManager = manager
+}
+
+// EnableHookManager creates and sets a new hook manager if not already set.
+// Returns the hook manager.
+func (d *Dispatcher) EnableHookManager() *hook.Manager {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.hookManager == nil {
+		d.hookManager = hook.NewManager()
+	}
+	return d.hookManager
 }
