@@ -105,6 +105,12 @@ type Result struct {
 	// ViewUpdate indicates required view updates.
 	ViewUpdate ViewUpdate
 
+	// RegisterContent holds text to be stored in a register (for yank/delete).
+	RegisterContent string
+
+	// Linewise indicates if the register content is linewise (for paste behavior).
+	Linewise bool
+
 	// Data holds handler-specific return data.
 	Data map[string]interface{}
 }
@@ -295,4 +301,16 @@ func (r Result) GetDataBool(key string) bool {
 		}
 	}
 	return false
+}
+
+// WithRegisterContent returns a copy of the result with register content set.
+func (r Result) WithRegisterContent(content string) Result {
+	r.RegisterContent = content
+	return r
+}
+
+// WithLinewise returns a copy of the result with linewise flag set.
+func (r Result) WithLinewise(linewise bool) Result {
+	r.Linewise = linewise
+	return r
 }
