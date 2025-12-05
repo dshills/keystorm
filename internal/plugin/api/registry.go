@@ -205,6 +205,12 @@ type Context struct {
 
 	// Command provides command/palette operations.
 	Command CommandProvider
+
+	// Event provides event bus operations.
+	Event EventProvider
+
+	// UI provides UI operations (notifications, statusline, etc.).
+	UI UIProvider
 }
 
 // BufferProvider defines the interface for buffer operations.
