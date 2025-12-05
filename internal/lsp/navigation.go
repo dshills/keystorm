@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // NavigationService provides high-level navigation features built on LSP.
@@ -23,9 +24,8 @@ type NavigationService struct {
 	maxHistory   int
 
 	// Symbol caches
-	documentSymbols   map[DocumentURI]*symbolCache
-	workspaceSymbols  []SymbolInformation
-	symbolCacheExpiry int64 // seconds
+	documentSymbols  map[DocumentURI]*symbolCache
+	workspaceSymbols []SymbolInformation
 
 	// Definition cache
 	definitionCache map[definitionKey]*definitionCacheEntry
@@ -197,21 +197,24 @@ func NewNavigationService(manager *Manager, opts ...NavigationOption) *Navigatio
 
 // GoToDefinition navigates to the definition of the symbol at the given position.
 func (ns *NavigationService) GoToDefinition(ctx context.Context, path string, pos Position) (*NavigationResult, error) {
-	server := ns.getServer(path)
-	if server == nil {
-		return nil, ErrNoServerForFile
+	server, err := ns.getServer(ctx, path)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check cache
 	uri := FilePathToURI(path)
 	key := definitionKey{uri: uri, line: pos.Line, char: pos.Character}
+	now := time.Now().Unix()
 
 	if ns.enableLocationCache {
 		ns.mu.RLock()
 		if entry, ok := ns.definitionCache[key]; ok {
-			ns.mu.RUnlock()
-			// Check if cache is still valid (we don't have time import, so skip expiry check here)
-			return ns.buildResult(entry.locations), nil
+			// Check if cache is still valid
+			if now-entry.timestamp < ns.locationCacheMaxAge {
+				ns.mu.RUnlock()
+				return ns.buildResult(entry.locations), nil
+			}
 		}
 		ns.mu.RUnlock()
 	}
@@ -226,6 +229,7 @@ func (ns *NavigationService) GoToDefinition(ctx context.Context, path string, po
 		ns.mu.Lock()
 		ns.definitionCache[key] = &definitionCacheEntry{
 			locations: locations,
+			timestamp: now,
 		}
 		ns.mu.Unlock()
 	}
@@ -237,6 +241,7 @@ func (ns *NavigationService) GoToDefinition(ctx context.Context, path string, po
 		ns.pushHistory(NavigationEntry{
 			Location:    *result.Primary,
 			Description: fmt.Sprintf("Definition at %s:%d", filepath.Base(path), pos.Line+1),
+			Timestamp:   now,
 		})
 	}
 
@@ -245,9 +250,9 @@ func (ns *NavigationService) GoToDefinition(ctx context.Context, path string, po
 
 // GoToTypeDefinition navigates to the type definition.
 func (ns *NavigationService) GoToTypeDefinition(ctx context.Context, path string, pos Position) (*NavigationResult, error) {
-	server := ns.getServer(path)
-	if server == nil {
-		return nil, ErrNoServerForFile
+	server, err := ns.getServer(ctx, path)
+	if err != nil {
+		return nil, err
 	}
 
 	locations, err := server.TypeDefinition(ctx, path, pos)
@@ -261,6 +266,7 @@ func (ns *NavigationService) GoToTypeDefinition(ctx context.Context, path string
 		ns.pushHistory(NavigationEntry{
 			Location:    *result.Primary,
 			Description: fmt.Sprintf("Type definition at %s:%d", filepath.Base(path), pos.Line+1),
+			Timestamp:   time.Now().Unix(),
 		})
 	}
 
@@ -269,9 +275,9 @@ func (ns *NavigationService) GoToTypeDefinition(ctx context.Context, path string
 
 // FindReferences finds all references to the symbol at the given position.
 func (ns *NavigationService) FindReferences(ctx context.Context, path string, pos Position) (*NavigationResult, error) {
-	server := ns.getServer(path)
-	if server == nil {
-		return nil, ErrNoServerForFile
+	server, err := ns.getServer(ctx, path)
+	if err != nil {
+		return nil, err
 	}
 
 	locations, err := server.References(ctx, path, pos, ns.includeDeclaration)
@@ -285,9 +291,9 @@ func (ns *NavigationService) FindReferences(ctx context.Context, path string, po
 // FindImplementations finds implementations of an interface or abstract method.
 // Note: This requires the server to support textDocument/implementation.
 func (ns *NavigationService) FindImplementations(ctx context.Context, path string, pos Position) (*NavigationResult, error) {
-	server := ns.getServer(path)
-	if server == nil {
-		return nil, ErrNoServerForFile
+	server, err := ns.getServer(ctx, path)
+	if err != nil {
+		return nil, err
 	}
 
 	// Implementation uses the same protocol as definition/typeDefinition
@@ -307,19 +313,23 @@ func (ns *NavigationService) FindImplementations(ctx context.Context, path strin
 
 // GetDocumentSymbols returns symbols in a document.
 func (ns *NavigationService) GetDocumentSymbols(ctx context.Context, path string) ([]DocumentSymbol, error) {
-	server := ns.getServer(path)
-	if server == nil {
-		return nil, ErrNoServerForFile
+	server, err := ns.getServer(ctx, path)
+	if err != nil {
+		return nil, err
 	}
 
 	uri := FilePathToURI(path)
+	now := time.Now().Unix()
 
 	// Check cache
 	if ns.enableSymbolCaching {
 		ns.mu.RLock()
 		if cache, ok := ns.documentSymbols[uri]; ok {
-			ns.mu.RUnlock()
-			return cache.symbols, nil
+			// Check if cache is still valid
+			if now-cache.timestamp < ns.symbolCacheMaxAge {
+				ns.mu.RUnlock()
+				return cache.symbols, nil
+			}
 		}
 		ns.mu.RUnlock()
 	}
@@ -333,7 +343,8 @@ func (ns *NavigationService) GetDocumentSymbols(ctx context.Context, path string
 	if ns.enableSymbolCaching {
 		ns.mu.Lock()
 		ns.documentSymbols[uri] = &symbolCache{
-			symbols: symbols,
+			symbols:   symbols,
+			timestamp: now,
 		}
 		ns.mu.Unlock()
 	}
@@ -344,13 +355,17 @@ func (ns *NavigationService) GetDocumentSymbols(ctx context.Context, path string
 // GetSymbolTree returns a hierarchical tree of document symbols.
 func (ns *NavigationService) GetSymbolTree(ctx context.Context, path string) (*SymbolTree, error) {
 	uri := FilePathToURI(path)
+	now := time.Now().Unix()
 
 	// Check cache for tree
 	if ns.enableSymbolCaching {
 		ns.mu.RLock()
 		if cache, ok := ns.documentSymbols[uri]; ok && cache.tree != nil {
-			ns.mu.RUnlock()
-			return cache.tree, nil
+			// Check if cache is still valid
+			if now-cache.timestamp < ns.symbolCacheMaxAge {
+				ns.mu.RUnlock()
+				return cache.tree, nil
+			}
 		}
 		ns.mu.RUnlock()
 	}
@@ -386,12 +401,13 @@ func (ns *NavigationService) SearchDocumentSymbols(ctx context.Context, path, pa
 
 // SearchWorkspaceSymbols searches for symbols across the workspace.
 func (ns *NavigationService) SearchWorkspaceSymbols(ctx context.Context, query string, languageID string) ([]SymbolInformation, error) {
-	server := ns.getServerForLanguage(languageID)
-	if server == nil {
+	server, err := ns.getServerForLanguage(ctx, languageID)
+	if err != nil {
 		// Try to find any server that supports workspace symbols
-		server = ns.getAnyServer()
-		if server == nil {
-			return nil, ErrNoServerForFile
+		var anyErr error
+		server, anyErr = ns.getAnyServer(ctx)
+		if anyErr != nil {
+			return nil, err // Return original error for better context
 		}
 	}
 
@@ -549,43 +565,42 @@ func (ns *NavigationService) InvalidateAllCaches() {
 
 // --- Helper Methods ---
 
-func (ns *NavigationService) getServer(path string) *Server {
+func (ns *NavigationService) getServer(ctx context.Context, path string) (*Server, error) {
 	if ns.manager == nil {
-		return nil
+		return nil, ErrNoServerForFile
 	}
-	// Use a background context for getting the server
-	server, err := ns.manager.ServerForFile(context.Background(), path)
+	server, err := ns.manager.ServerForFile(ctx, path)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("getting server for file %s: %w", path, err)
 	}
-	return server
+	return server, nil
 }
 
-func (ns *NavigationService) getServerForLanguage(languageID string) *Server {
+func (ns *NavigationService) getServerForLanguage(ctx context.Context, languageID string) (*Server, error) {
 	if ns.manager == nil {
-		return nil
+		return nil, ErrNoServerForFile
 	}
-	server, err := ns.manager.ServerForLanguage(context.Background(), languageID)
+	server, err := ns.manager.ServerForLanguage(ctx, languageID)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("getting server for language %s: %w", languageID, err)
 	}
-	return server
+	return server, nil
 }
 
-func (ns *NavigationService) getAnyServer() *Server {
+func (ns *NavigationService) getAnyServer(ctx context.Context) (*Server, error) {
 	if ns.manager == nil {
-		return nil
+		return nil, ErrNoServerForFile
 	}
 	infos := ns.manager.ServerInfos()
-	if len(infos) > 0 {
-		// Get the first available server
-		server, err := ns.manager.ServerForLanguage(context.Background(), infos[0].LanguageID)
-		if err != nil {
-			return nil
-		}
-		return server
+	if len(infos) == 0 {
+		return nil, ErrNoServerForFile
 	}
-	return nil
+	// Get the first available server
+	server, err := ns.manager.ServerForLanguage(ctx, infos[0].LanguageID)
+	if err != nil {
+		return nil, fmt.Errorf("getting any server: %w", err)
+	}
+	return server, nil
 }
 
 func (ns *NavigationService) buildResult(locations []Location) *NavigationResult {
@@ -755,9 +770,9 @@ func (ns *NavigationService) findNodeAtPosition(nodes []*SymbolNode, pos Positio
 	for _, node := range nodes {
 		if containsPosition(node.Symbol.Range, pos) {
 			// Check children first (more specific)
-			for _, child := range node.Children {
-				if result := ns.findNodeAtPosition([]*SymbolNode{child}, pos); result != nil {
-					return result
+			if len(node.Children) > 0 {
+				if child := ns.findNodeAtPosition(node.Children, pos); child != nil {
+					return child
 				}
 			}
 			return node
