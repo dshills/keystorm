@@ -127,8 +127,9 @@ func TestCategorizeActions(t *testing.T) {
 }
 
 func TestFilterActionsByKind(t *testing.T) {
+	kinds := []CodeActionKind{CodeActionKindQuickFix, CodeActionKindRefactor}
 	as := NewActionsService(nil,
-		WithCodeActionKinds([]CodeActionKind{CodeActionKindQuickFix, CodeActionKindRefactor}),
+		WithCodeActionKinds(kinds),
 	)
 
 	actions := []CodeAction{
@@ -137,7 +138,7 @@ func TestFilterActionsByKind(t *testing.T) {
 		{Title: "Organize imports", Kind: CodeActionKindSourceOrganizeImports},
 	}
 
-	filtered := as.filterActionsByKind(actions)
+	filtered := as.filterActionsByKindWith(actions, kinds)
 
 	if len(filtered) != 2 {
 		t.Errorf("Filtered: got %d, want 2", len(filtered))
@@ -180,9 +181,12 @@ func TestIsExcludedFromFormatting(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := as.isExcludedFromFormatting(tt.path)
+		// Call with lock held as required by the method
+		as.mu.RLock()
+		got := as.isExcludedFromFormattingLocked(tt.path)
+		as.mu.RUnlock()
 		if got != tt.want {
-			t.Errorf("isExcludedFromFormatting(%q) = %v, want %v", tt.path, got, tt.want)
+			t.Errorf("isExcludedFromFormattingLocked(%q) = %v, want %v", tt.path, got, tt.want)
 		}
 	}
 }

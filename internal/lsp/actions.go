@@ -169,9 +169,12 @@ func (as *ActionsService) GetCodeActions(ctx context.Context, path string, rng R
 		return nil, err
 	}
 
+	// Normalize path for cache key
+	cleanPath := filepath.Clean(path)
+
 	// Check cache
 	key := actionCacheKey{
-		path:      path,
+		path:      cleanPath,
 		startLine: rng.Start.Line,
 		startChar: rng.Start.Character,
 		endLine:   rng.End.Line,
@@ -180,12 +183,14 @@ func (as *ActionsService) GetCodeActions(ctx context.Context, path string, rng R
 	now := time.Now().Unix()
 
 	as.mu.RLock()
+	cacheAge := as.codeActionCacheAge
 	if entry, ok := as.codeActionCache[key]; ok {
-		if now-entry.timestamp < as.codeActionCacheAge {
+		if now-entry.timestamp < cacheAge {
 			as.mu.RUnlock()
 			return as.categorizeActions(entry.actions), nil
 		}
 	}
+	kinds := as.codeActionKinds
 	as.mu.RUnlock()
 
 	actions, err := server.CodeActions(ctx, path, rng, diagnostics)
@@ -194,8 +199,8 @@ func (as *ActionsService) GetCodeActions(ctx context.Context, path string, rng R
 	}
 
 	// Filter by kinds if specified
-	if len(as.codeActionKinds) > 0 {
-		actions = as.filterActionsByKind(actions)
+	if len(kinds) > 0 {
+		actions = as.filterActionsByKindWith(actions, kinds)
 	}
 
 	// Cache result
@@ -236,10 +241,10 @@ func (as *ActionsService) GetRefactorings(ctx context.Context, path string, rng 
 
 // GetOrganizeImports returns the organize imports action if available.
 func (as *ActionsService) GetOrganizeImports(ctx context.Context, path string) (*CodeAction, error) {
-	// Use full document range
+	// Use full document range. MaxInt32 is safe and widely supported by LSP servers.
 	fullRange := Range{
 		Start: Position{Line: 0, Character: 0},
-		End:   Position{Line: 999999, Character: 0}, // Large line number
+		End:   Position{Line: 1<<31 - 1, Character: 0},
 	}
 
 	result, err := as.GetCodeActions(ctx, path, fullRange, nil)
@@ -282,8 +287,13 @@ type FormatResult struct {
 
 // FormatDocument formats an entire document.
 func (as *ActionsService) FormatDocument(ctx context.Context, path string) (*FormatResult, error) {
-	// Check exclusions
-	if as.isExcludedFromFormatting(path) {
+	// Check exclusions (with lock)
+	as.mu.RLock()
+	excluded := as.isExcludedFromFormattingLocked(path)
+	opts := as.formatOptions
+	as.mu.RUnlock()
+
+	if excluded {
 		return &FormatResult{
 			Skipped:    true,
 			SkipReason: "file excluded from formatting",
@@ -295,7 +305,7 @@ func (as *ActionsService) FormatDocument(ctx context.Context, path string) (*For
 		return nil, err
 	}
 
-	edits, err := server.Format(ctx, path, as.formatOptions)
+	edits, err := server.Format(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -308,8 +318,13 @@ func (as *ActionsService) FormatDocument(ctx context.Context, path string) (*For
 
 // FormatRange formats a range within a document.
 func (as *ActionsService) FormatRange(ctx context.Context, path string, rng Range) (*FormatResult, error) {
-	// Check exclusions
-	if as.isExcludedFromFormatting(path) {
+	// Check exclusions (with lock)
+	as.mu.RLock()
+	excluded := as.isExcludedFromFormattingLocked(path)
+	opts := as.formatOptions
+	as.mu.RUnlock()
+
+	if excluded {
 		return &FormatResult{
 			Skipped:    true,
 			SkipReason: "file excluded from formatting",
@@ -321,7 +336,7 @@ func (as *ActionsService) FormatRange(ctx context.Context, path string, rng Rang
 		return nil, err
 	}
 
-	edits, err := server.FormatRange(ctx, path, rng, as.formatOptions)
+	edits, err := server.FormatRange(ctx, path, rng, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +350,11 @@ func (as *ActionsService) FormatRange(ctx context.Context, path string, rng Rang
 // FormatOnSave formats a document if format-on-save is enabled.
 // Returns nil result if format-on-save is disabled.
 func (as *ActionsService) FormatOnSave(ctx context.Context, path string) (*FormatResult, error) {
-	if !as.formatOnSave {
+	as.mu.RLock()
+	enabled := as.formatOnSave
+	as.mu.RUnlock()
+
+	if !enabled {
 		return nil, nil
 	}
 	return as.FormatDocument(ctx, path)
@@ -343,7 +362,9 @@ func (as *ActionsService) FormatOnSave(ctx context.Context, path string) (*Forma
 
 // ShouldFormatOnSave returns whether format-on-save is enabled and the file is not excluded.
 func (as *ActionsService) ShouldFormatOnSave(path string) bool {
-	return as.formatOnSave && !as.isExcludedFromFormatting(path)
+	as.mu.RLock()
+	defer as.mu.RUnlock()
+	return as.formatOnSave && !as.isExcludedFromFormattingLocked(path)
 }
 
 // SetFormatOnSave enables/disables format on save.
@@ -601,13 +622,15 @@ func (as *ActionsService) GetSignatureHelp(ctx context.Context, path string, pos
 // GetActiveSignature returns the currently active signature (if tracking).
 func (as *ActionsService) GetActiveSignature() *SignatureHelpResult {
 	as.mu.RLock()
-	defer as.mu.RUnlock()
-
 	if as.activeSignature == nil || as.activeSignature.help == nil {
+		as.mu.RUnlock()
 		return nil
 	}
+	// Copy the help pointer while holding the lock to avoid races
+	help := as.activeSignature.help
+	as.mu.RUnlock()
 
-	return as.buildSignatureResult(as.activeSignature.help)
+	return as.buildSignatureResult(help)
 }
 
 // ClearSignatureHelp clears the active signature help state.
@@ -653,9 +676,44 @@ func (as *ActionsService) ApplyWorkspaceEdit(ctx context.Context, edit Workspace
 		ModifiedFiles: make([]string, 0),
 	}
 
-	// Count files to be modified
+	// Collect files from edit.Changes
+	fileSet := make(map[string]bool)
 	for uri := range edit.Changes {
-		result.ModifiedFiles = append(result.ModifiedFiles, URIToFilePath(uri))
+		fileSet[URIToFilePath(uri)] = true
+	}
+
+	// Also collect files from DocumentChanges if present
+	// DocumentChanges can contain TextDocumentEdit or resource operations (CreateFile, RenameFile, DeleteFile)
+	for _, change := range edit.DocumentChanges {
+		if changeMap, ok := change.(map[string]any); ok {
+			// Check if it's a TextDocumentEdit (has textDocument field)
+			if textDoc, ok := changeMap["textDocument"].(map[string]any); ok {
+				if uri, ok := textDoc["uri"].(string); ok {
+					fileSet[URIToFilePath(DocumentURI(uri))] = true
+				}
+			}
+			// Check for resource operations
+			if kind, ok := changeMap["kind"].(string); ok {
+				switch kind {
+				case "create", "delete":
+					if uri, ok := changeMap["uri"].(string); ok {
+						fileSet[URIToFilePath(DocumentURI(uri))] = true
+					}
+				case "rename":
+					if oldUri, ok := changeMap["oldUri"].(string); ok {
+						fileSet[URIToFilePath(DocumentURI(oldUri))] = true
+					}
+					if newUri, ok := changeMap["newUri"].(string); ok {
+						fileSet[URIToFilePath(DocumentURI(newUri))] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Convert set to slice
+	for file := range fileSet {
+		result.ModifiedFiles = append(result.ModifiedFiles, file)
 	}
 
 	// Sort for consistent ordering
@@ -672,11 +730,13 @@ func (as *ActionsService) ApplyWorkspaceEdit(ctx context.Context, edit Workspace
 
 // InvalidateCodeActionCache invalidates code action cache for a file.
 func (as *ActionsService) InvalidateCodeActionCache(path string) {
+	cleanPath := filepath.Clean(path)
+
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
 	for key := range as.codeActionCache {
-		if key.path == path {
+		if key.path == cleanPath {
 			delete(as.codeActionCache, key)
 		}
 	}
@@ -724,13 +784,14 @@ func (as *ActionsService) categorizeActions(actions []CodeAction) *CodeActionRes
 	return result
 }
 
-func (as *ActionsService) filterActionsByKind(actions []CodeAction) []CodeAction {
-	if len(as.codeActionKinds) == 0 {
+// filterActionsByKindWith filters actions by the given kinds (with prefix matching).
+func (as *ActionsService) filterActionsByKindWith(actions []CodeAction, kinds []CodeActionKind) []CodeAction {
+	if len(kinds) == 0 {
 		return actions
 	}
 
 	kindSet := make(map[CodeActionKind]bool)
-	for _, k := range as.codeActionKinds {
+	for _, k := range kinds {
 		kindSet[k] = true
 	}
 
@@ -748,18 +809,23 @@ func (as *ActionsService) filterActionsByKind(actions []CodeAction) []CodeAction
 	return filtered
 }
 
-func (as *ActionsService) isExcludedFromFormatting(path string) bool {
+// isExcludedFromFormattingLocked checks if a path is excluded from formatting.
+// Must be called with as.mu held (read or write lock).
+func (as *ActionsService) isExcludedFromFormattingLocked(path string) bool {
 	if len(as.formatExcludes) == 0 {
 		return false
 	}
 
-	filename := filepath.Base(path)
+	cleanPath := filepath.Clean(path)
+	filename := filepath.Base(cleanPath)
+
 	for _, pattern := range as.formatExcludes {
-		if matched, _ := filepath.Match(pattern, filename); matched {
+		// Match against filename
+		if matched, err := filepath.Match(pattern, filename); err == nil && matched {
 			return true
 		}
 		// Also try matching against full path
-		if matched, _ := filepath.Match(pattern, path); matched {
+		if matched, err := filepath.Match(pattern, cleanPath); err == nil && matched {
 			return true
 		}
 	}
@@ -781,10 +847,15 @@ func (as *ActionsService) buildSignatureResult(help *SignatureHelp) *SignatureHe
 			ActiveParameterIndex: sig.ActiveParameter,
 		}
 
-		// Use the signature's active parameter if set, otherwise use the help's
-		activeParam := sig.ActiveParameter
-		if activeParam == 0 && help.ActiveParameter > 0 {
-			activeParam = help.ActiveParameter
+		// Determine active parameter index.
+		// LSP spec: SignatureInformation.activeParameter takes precedence if set (>= 0).
+		// If the signature doesn't specify, fall back to SignatureHelp.activeParameter.
+		// Both default to 0 which is valid (first parameter), so we use the signature's
+		// value for the active signature, otherwise use the help's global value.
+		activeParam := help.ActiveParameter
+		if i == help.ActiveSignature {
+			// For the active signature, prefer the signature-level activeParameter
+			activeParam = sig.ActiveParameter
 		}
 
 		for j, param := range sig.Parameters {
@@ -886,6 +957,7 @@ func FormatCodeAction(action CodeAction) string {
 }
 
 // SortCodeActions sorts code actions by kind and preferred status.
+// Actions are sorted: preferred first, then by kind order, then alphabetically by title.
 func SortCodeActions(actions []CodeAction) {
 	sort.Slice(actions, func(i, j int) bool {
 		// Preferred actions first
@@ -893,7 +965,13 @@ func SortCodeActions(actions []CodeAction) {
 			return actions[i].IsPreferred
 		}
 		// Then by kind (quick fixes first)
-		return codeActionKindOrder(actions[i].Kind) < codeActionKindOrder(actions[j].Kind)
+		orderI := codeActionKindOrder(actions[i].Kind)
+		orderJ := codeActionKindOrder(actions[j].Kind)
+		if orderI != orderJ {
+			return orderI < orderJ
+		}
+		// Tie-breaker: sort alphabetically by title for deterministic ordering
+		return actions[i].Title < actions[j].Title
 	})
 }
 
@@ -933,27 +1011,85 @@ func FormatTextEdit(edit TextEdit) string {
 }
 
 // CountWorkspaceEditChanges counts total changes in a workspace edit.
+// Counts edits from both Changes and DocumentChanges.
 func CountWorkspaceEditChanges(edit *WorkspaceEdit) int {
 	if edit == nil {
 		return 0
 	}
 
 	count := 0
+
+	// Count from Changes
 	for _, edits := range edit.Changes {
 		count += len(edits)
 	}
+
+	// Count from DocumentChanges
+	for _, change := range edit.DocumentChanges {
+		if changeMap, ok := change.(map[string]any); ok {
+			// TextDocumentEdit has "edits" array
+			if edits, ok := changeMap["edits"].([]any); ok {
+				count += len(edits)
+			}
+			// Resource operations (create, rename, delete) count as 1 each
+			if _, ok := changeMap["kind"].(string); ok {
+				count++
+			}
+		}
+	}
+
 	return count
 }
 
 // GetWorkspaceEditFiles returns all files affected by a workspace edit.
+// Collects files from both Changes and DocumentChanges.
 func GetWorkspaceEditFiles(edit *WorkspaceEdit) []string {
 	if edit == nil {
 		return nil
 	}
 
-	files := make([]string, 0, len(edit.Changes))
+	fileSet := make(map[string]bool)
+
+	// Collect from Changes
 	for uri := range edit.Changes {
-		files = append(files, URIToFilePath(uri))
+		fileSet[URIToFilePath(uri)] = true
+	}
+
+	// Collect from DocumentChanges
+	for _, change := range edit.DocumentChanges {
+		if changeMap, ok := change.(map[string]any); ok {
+			// TextDocumentEdit
+			if textDoc, ok := changeMap["textDocument"].(map[string]any); ok {
+				if uri, ok := textDoc["uri"].(string); ok {
+					fileSet[URIToFilePath(DocumentURI(uri))] = true
+				}
+			}
+			// Resource operations
+			if kind, ok := changeMap["kind"].(string); ok {
+				switch kind {
+				case "create", "delete":
+					if uri, ok := changeMap["uri"].(string); ok {
+						fileSet[URIToFilePath(DocumentURI(uri))] = true
+					}
+				case "rename":
+					if oldUri, ok := changeMap["oldUri"].(string); ok {
+						fileSet[URIToFilePath(DocumentURI(oldUri))] = true
+					}
+					if newUri, ok := changeMap["newUri"].(string); ok {
+						fileSet[URIToFilePath(DocumentURI(newUri))] = true
+					}
+				}
+			}
+		}
+	}
+
+	if len(fileSet) == 0 {
+		return nil
+	}
+
+	files := make([]string, 0, len(fileSet))
+	for file := range fileSet {
+		files = append(files, file)
 	}
 	sort.Strings(files)
 	return files
