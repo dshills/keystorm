@@ -21,11 +21,17 @@ type Manager struct {
 	servers map[string]*Server // languageID -> server
 	configs map[string]ServerConfig
 
+	// Supervised servers (crash recovery enabled)
+	supervisors map[string]*Supervisor // languageID -> supervisor
+
 	workspaceFolders []WorkspaceFolder
 	diagnosticsCb    func(uri DocumentURI, diagnostics []Diagnostic)
+	supervisorCb     func(event SupervisorEvent)
 
 	// Options
-	requestTimeout time.Duration
+	requestTimeout   time.Duration
+	supervisionMode  bool
+	supervisorConfig SupervisorConfig
 }
 
 // ManagerOption configures the manager.
@@ -45,12 +51,29 @@ func WithDiagnosticsCallback(cb func(uri DocumentURI, diagnostics []Diagnostic))
 	}
 }
 
+// WithSupervision enables crash recovery supervision for servers.
+func WithSupervision(config SupervisorConfig) ManagerOption {
+	return func(m *Manager) {
+		m.supervisionMode = true
+		m.supervisorConfig = config
+	}
+}
+
+// WithSupervisorCallback sets a callback for supervisor events.
+func WithSupervisorCallback(cb func(event SupervisorEvent)) ManagerOption {
+	return func(m *Manager) {
+		m.supervisorCb = cb
+	}
+}
+
 // NewManager creates a new LSP manager.
 func NewManager(opts ...ManagerOption) *Manager {
 	m := &Manager{
-		servers:        make(map[string]*Server),
-		configs:        make(map[string]ServerConfig),
-		requestTimeout: 10 * time.Second,
+		servers:          make(map[string]*Server),
+		configs:          make(map[string]ServerConfig),
+		supervisors:      make(map[string]*Supervisor),
+		requestTimeout:   10 * time.Second,
+		supervisorConfig: DefaultSupervisorConfig(),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -84,6 +107,11 @@ func (m *Manager) WorkspaceRoot() string {
 
 // getOrStartServer returns the server for a language, starting it if needed.
 func (m *Manager) getOrStartServer(ctx context.Context, languageID string) (*Server, error) {
+	// Check for supervised mode
+	if m.supervisionMode {
+		return m.getOrStartSupervisedServer(ctx, languageID)
+	}
+
 	m.mu.RLock()
 	server, exists := m.servers[languageID]
 	m.mu.RUnlock()
@@ -120,6 +148,79 @@ func (m *Manager) getOrStartServer(ctx context.Context, languageID string) (*Ser
 
 	m.servers[languageID] = server
 	return server, nil
+}
+
+// getOrStartSupervisedServer returns a supervised server, starting it if needed.
+func (m *Manager) getOrStartSupervisedServer(ctx context.Context, languageID string) (*Server, error) {
+	m.mu.RLock()
+	supervisor, exists := m.supervisors[languageID]
+	m.mu.RUnlock()
+
+	if exists {
+		if supervisor.IsReady() {
+			return supervisor.Server(), nil
+		}
+		// Check if supervisor has permanently failed
+		if supervisor.State() == SupervisorStateFailed {
+			return nil, &ServerError{LanguageID: languageID, Err: ErrSupervisorFailed}
+		}
+		// Server might be restarting, return the server anyway
+		server := supervisor.Server()
+		if server != nil {
+			return server, nil
+		}
+		return nil, &ServerError{LanguageID: languageID, Err: ErrServerNotReady}
+	}
+
+	// Need to start supervisor
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if supervisor, exists = m.supervisors[languageID]; exists {
+		if supervisor.IsReady() {
+			return supervisor.Server(), nil
+		}
+		server := supervisor.Server()
+		if server != nil {
+			return server, nil
+		}
+		return nil, &ServerError{LanguageID: languageID, Err: ErrServerNotReady}
+	}
+
+	config, hasConfig := m.configs[languageID]
+	if !hasConfig {
+		return nil, &ServerError{LanguageID: languageID, Err: ErrNoServer}
+	}
+
+	// Create supervisor
+	supervisor = NewSupervisor(config, languageID, m.supervisorConfig)
+
+	// Set up diagnostics forwarding
+	if m.diagnosticsCb != nil {
+		supervisor.OnDiagnostics(m.diagnosticsCb)
+	}
+
+	// Start event forwarding
+	if m.supervisorCb != nil {
+		go m.forwardSupervisorEvents(supervisor)
+	}
+
+	if err := supervisor.Start(ctx, m.workspaceFolders); err != nil {
+		return nil, &ServerError{LanguageID: languageID, Err: err}
+	}
+
+	m.supervisors[languageID] = supervisor
+	return supervisor.Server(), nil
+}
+
+// forwardSupervisorEvents forwards supervisor events to the callback.
+func (m *Manager) forwardSupervisorEvents(supervisor *Supervisor) {
+	for event := range supervisor.Events() {
+		if m.supervisorCb != nil {
+			m.supervisorCb(event)
+		}
+	}
 }
 
 // ServerForFile returns the server for a file, starting it if needed.
@@ -318,7 +419,7 @@ func (m *Manager) IsAvailable(path string) bool {
 	return false
 }
 
-// Shutdown gracefully shuts down all servers.
+// Shutdown gracefully shuts down all servers and supervisors.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	servers := make([]*Server, 0, len(m.servers))
@@ -326,9 +427,24 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 		servers = append(servers, s)
 	}
 	m.servers = make(map[string]*Server)
+
+	supervisors := make([]*Supervisor, 0, len(m.supervisors))
+	for _, s := range m.supervisors {
+		supervisors = append(supervisors, s)
+	}
+	m.supervisors = make(map[string]*Supervisor)
 	m.mu.Unlock()
 
 	var errs []error
+
+	// Shutdown supervised servers first
+	for _, s := range supervisors {
+		if err := s.Stop(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	// Shutdown unsupervised servers
 	for _, s := range servers {
 		if err := s.Shutdown(ctx); err != nil {
 			errs = append(errs, err)
@@ -342,11 +458,36 @@ func (m *Manager) ServerStatus(languageID string) ServerStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// Check supervisors first
+	if supervisor, exists := m.supervisors[languageID]; exists {
+		if server := supervisor.Server(); server != nil {
+			return server.Status()
+		}
+		return ServerStatusStopped
+	}
+
 	server, exists := m.servers[languageID]
 	if !exists {
 		return ServerStatusStopped
 	}
 	return server.Status()
+}
+
+// SupervisorStats returns statistics for a supervised server.
+func (m *Manager) SupervisorStats(languageID string) (SupervisorStats, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	supervisor, exists := m.supervisors[languageID]
+	if !exists {
+		return SupervisorStats{}, false
+	}
+	return supervisor.Stats(), true
+}
+
+// IsSupervised returns true if supervision mode is enabled.
+func (m *Manager) IsSupervised() bool {
+	return m.supervisionMode
 }
 
 // RegisteredLanguages returns the list of languages with registered servers.

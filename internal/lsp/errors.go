@@ -42,6 +42,12 @@ var (
 
 	// ErrNoServerForFile indicates no server is available for the file type.
 	ErrNoServerForFile = errors.New("no server for file type")
+
+	// ErrServerAlreadyRunning indicates the server is already running.
+	ErrServerAlreadyRunning = errors.New("server already running")
+
+	// ErrSupervisorFailed indicates the supervisor has given up on restarting.
+	ErrSupervisorFailed = errors.New("supervisor failed after max restarts")
 )
 
 // RPCError represents a JSON-RPC error from the server.
