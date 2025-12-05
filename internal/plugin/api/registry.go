@@ -138,6 +138,7 @@ func installKSLoader(L *lua.LState) error {
 	ksModule := L.NewTable()
 
 	// Collect all _ks_* globals into the ks table
+	// Note: keymap and command are added to support Phase 4
 	moduleNames := []string{"buf", "cursor", "mode", "util", "keymap", "command", "event", "config", "ui", "lsp"}
 	for _, name := range moduleNames {
 		globalName := "_ks_" + name
@@ -198,6 +199,12 @@ type Context struct {
 
 	// Mode provides mode operations.
 	Mode ModeProvider
+
+	// Keymap provides keymap operations.
+	Keymap KeymapProvider
+
+	// Command provides command/palette operations.
+	Command CommandProvider
 }
 
 // BufferProvider defines the interface for buffer operations.
