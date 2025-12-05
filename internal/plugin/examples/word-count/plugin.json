@@ -1,0 +1,31 @@
+{
+  "name": "word-count",
+  "version": "1.0.0",
+  "displayName": "Word Count",
+  "description": "Displays word, line, and character counts in the statusline",
+  "author": "Keystorm Team",
+  "main": "init.lua",
+  "capabilities": ["command", "ui", "event"],
+  "commands": [
+    {
+      "id": "word-count.show",
+      "title": "Word Count: Show Statistics"
+    },
+    {
+      "id": "word-count.toggle",
+      "title": "Word Count: Toggle Statusline Display"
+    }
+  ],
+  "configSchema": {
+    "showInStatusline": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show word count in statusline"
+    },
+    "format": {
+      "type": "string",
+      "default": "W:%d L:%d C:%d",
+      "description": "Format string for statusline (W=words, L=lines, C=chars)"
+    }
+  }
+}

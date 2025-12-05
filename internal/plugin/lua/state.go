@@ -110,11 +110,16 @@ func openSafeLibraries(L *lua.LState) {
 	lua.OpenString(L)
 	lua.OpenMath(L)
 
+	// Open package library (needed for require/module system).
+	// SECURITY: The sandbox clears package.path/cpath and installs a safe
+	// require() that only allows whitelisted modules and preloaded modules.
+	// Arbitrary file loading is prevented.
+	lua.OpenPackage(L)
+
 	// Note: These are intentionally NOT opened:
-	// - io (file system access)
-	// - os (system calls, execute)
-	// - debug (can bypass sandbox)
-	// - package (can load arbitrary modules)
+	// - io (file system access) - capability-gated
+	// - os (system calls, execute) - capability-gated
+	// - debug (can bypass sandbox) - requires unsafe capability
 }
 
 // DoFile executes a Lua file.

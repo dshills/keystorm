@@ -73,7 +73,43 @@ func (s *Sandbox) installSafePrint() {
 }
 
 // installSafeRequire replaces require with a version that only allows safe modules.
+// This is a critical security function that prevents arbitrary module loading.
+//
+// SECURITY: This function clears package.path/cpath to prevent loading modules from
+// disk, and replaces require() with a whitelist-based version. Only preloaded modules
+// (via L.PreloadModule) and whitelisted built-in modules can be loaded.
 func (s *Sandbox) installSafeRequire() {
+	// Clear package.path and package.cpath to prevent loading modules from disk.
+	// Also clear package.loaded except for already-loaded safe modules.
+	pkg := s.L.GetGlobal("package")
+	if pkg != lua.LNil {
+		if pkgTable, ok := pkg.(*lua.LTable); ok {
+			s.L.SetField(pkgTable, "path", lua.LString(""))
+			s.L.SetField(pkgTable, "cpath", lua.LString(""))
+
+			// Clear package.loaded to prevent pre-injected modules from being used
+			// Keep only the safe built-in modules that are already loaded
+			safeLoaded := map[string]bool{
+				"_G": true, "string": true, "table": true, "math": true,
+				"bit32": true, "utf8": true, "package": true,
+			}
+			loaded := s.L.GetField(pkgTable, "loaded")
+			if loadedTbl, ok := loaded.(*lua.LTable); ok {
+				var keysToRemove []string
+				loadedTbl.ForEach(func(k, _ lua.LValue) {
+					if ks, ok := k.(lua.LString); ok {
+						if !safeLoaded[string(ks)] {
+							keysToRemove = append(keysToRemove, string(ks))
+						}
+					}
+				})
+				for _, key := range keysToRemove {
+					loadedTbl.RawSetString(key, lua.LNil)
+				}
+			}
+		}
+	}
+
 	// Whitelist of safe modules (built-in to gopher-lua)
 	safeModules := map[string]bool{
 		"string": true,
@@ -83,7 +119,7 @@ func (s *Sandbox) installSafeRequire() {
 		"utf8":   true,
 	}
 
-	// Store original require
+	// Store original require for loading preloaded and safe modules
 	originalRequire := s.L.GetGlobal("require")
 
 	s.L.SetGlobal("require", s.L.NewFunction(func(L *lua.LState) int {
@@ -97,7 +133,7 @@ func (s *Sandbox) installSafeRequire() {
 			return 1
 		}
 
-		// Allow ks.* modules (will be provided by the editor)
+		// Allow ks.* modules (will be provided by the editor via PreloadModule)
 		if len(modName) > 3 && modName[:3] == "ks." {
 			L.Push(originalRequire)
 			L.Push(lua.LString(modName))
@@ -105,7 +141,7 @@ func (s *Sandbox) installSafeRequire() {
 			return 1
 		}
 
-		// Allow the main ks module
+		// Allow the main ks module (provided via PreloadModule)
 		if modName == "ks" {
 			L.Push(originalRequire)
 			L.Push(lua.LString(modName))
@@ -118,25 +154,35 @@ func (s *Sandbox) installSafeRequire() {
 		case "io":
 			if !s.capabilities[CapabilityFileRead] && !s.capabilities[CapabilityFileWrite] {
 				L.RaiseError("module 'io' requires filesystem capability")
-				return 0
 			}
+			// If capability is granted, fall through to use original require
+			L.Push(originalRequire)
+			L.Push(lua.LString(modName))
+			L.Call(1, 1)
+			return 1
 		case "os":
 			if !s.capabilities[CapabilityShell] && !s.capabilities[CapabilityProcess] {
 				L.RaiseError("module 'os' requires shell or process capability")
-				return 0
 			}
+			L.Push(originalRequire)
+			L.Push(lua.LString(modName))
+			L.Call(1, 1)
+			return 1
 		case "debug":
 			if !s.capabilities[CapabilityUnsafe] {
 				L.RaiseError("module 'debug' requires unsafe capability")
-				return 0
 			}
+			L.Push(originalRequire)
+			L.Push(lua.LString(modName))
+			L.Call(1, 1)
+			return 1
 		}
 
-		// For other modules, use original require (will handle package.path)
-		L.Push(originalRequire)
-		L.Push(lua.LString(modName))
-		L.Call(1, 1)
-		return 1
+		// Reject unknown modules - do not allow arbitrary file loading.
+		// Only preloaded modules (via L.PreloadModule) will work.
+		// Note: L.RaiseError does a longjmp, so code after it is unreachable.
+		L.RaiseError("module %q is not available", modName)
+		return 0 // unreachable, but required for Go compiler
 	}))
 }
 

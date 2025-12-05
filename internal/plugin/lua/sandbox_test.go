@@ -297,3 +297,86 @@ func TestCapabilityConstants(t *testing.T) {
 		}
 	}
 }
+
+func TestSandboxBlocksUnknownModules(t *testing.T) {
+	L := glua.NewState(glua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	glua.OpenBase(L)
+	glua.OpenPackage(L)
+	glua.OpenString(L)
+
+	sandbox := NewSandbox(L, 1000000)
+	sandbox.Install()
+
+	// Unknown modules should be rejected
+	err := L.DoString(`local x = require("unknown_module")`)
+	if err == nil {
+		t.Error("require('unknown_module') should fail in sandbox")
+	}
+
+	// Arbitrary file paths should be rejected
+	err = L.DoString(`local x = require("/etc/passwd")`)
+	if err == nil {
+		t.Error("require('/etc/passwd') should fail in sandbox")
+	}
+
+	// Relative paths should be rejected
+	err = L.DoString(`local x = require("./malicious")`)
+	if err == nil {
+		t.Error("require('./malicious') should fail in sandbox")
+	}
+}
+
+func TestSandboxClearsPackagePath(t *testing.T) {
+	L := glua.NewState(glua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	glua.OpenBase(L)
+	glua.OpenPackage(L)
+
+	sandbox := NewSandbox(L, 1000000)
+	sandbox.Install()
+
+	// package.path should be empty
+	err := L.DoString(`
+		if package.path ~= "" then
+			error("package.path should be empty, got: " .. package.path)
+		end
+	`)
+	if err != nil {
+		t.Errorf("package.path check failed: %v", err)
+	}
+
+	// package.cpath should be empty
+	err = L.DoString(`
+		if package.cpath ~= "" then
+			error("package.cpath should be empty, got: " .. package.cpath)
+		end
+	`)
+	if err != nil {
+		t.Errorf("package.cpath check failed: %v", err)
+	}
+}
+
+func TestSandboxAllowsKsModule(t *testing.T) {
+	L := glua.NewState(glua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	glua.OpenBase(L)
+	glua.OpenPackage(L)
+
+	sandbox := NewSandbox(L, 1000000)
+	sandbox.Install()
+
+	// Preload a fake ks module
+	L.PreloadModule("ks", func(L *glua.LState) int {
+		mod := L.NewTable()
+		L.SetField(mod, "version", glua.LString("1.0"))
+		L.Push(mod)
+		return 1
+	})
+
+	// require("ks") should work
+	err := L.DoString(`local ks = require("ks"); assert(ks.version == "1.0")`)
+	if err != nil {
+		t.Errorf("require('ks') failed: %v", err)
+	}
+}

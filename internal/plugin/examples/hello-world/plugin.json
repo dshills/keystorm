@@ -1,0 +1,31 @@
+{
+  "name": "hello-world",
+  "version": "1.0.0",
+  "displayName": "Hello World",
+  "description": "A simple example plugin that demonstrates basic plugin features",
+  "author": "Keystorm Team",
+  "main": "init.lua",
+  "capabilities": ["command", "ui"],
+  "commands": [
+    {
+      "id": "hello-world.greet",
+      "title": "Hello World: Greet"
+    },
+    {
+      "id": "hello-world.info",
+      "title": "Hello World: Show Info"
+    }
+  ],
+  "configSchema": {
+    "greeting": {
+      "type": "string",
+      "default": "Hello",
+      "description": "The greeting message to display"
+    },
+    "name": {
+      "type": "string",
+      "default": "World",
+      "description": "The name to greet"
+    }
+  }
+}

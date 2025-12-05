@@ -33,4 +33,10 @@ var (
 
 	// ErrInvalidPlugin is returned when plugin validation fails.
 	ErrInvalidPlugin = errors.New("invalid plugin")
+
+	// ErrAlreadyInitialized is returned when Initialize is called on an already initialized system.
+	ErrAlreadyInitialized = errors.New("plugin system already initialized")
+
+	// ErrNotInitialized is returned when operations are attempted on an uninitialized system.
+	ErrNotInitialized = errors.New("plugin system not initialized")
 )
