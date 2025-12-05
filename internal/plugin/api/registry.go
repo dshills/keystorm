@@ -211,6 +211,9 @@ type Context struct {
 
 	// UI provides UI operations (notifications, statusline, etc.).
 	UI UIProvider
+
+	// Config provides configuration operations.
+	Config ConfigProvider
 }
 
 // BufferProvider defines the interface for buffer operations.
