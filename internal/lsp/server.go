@@ -605,6 +605,20 @@ func (s *Server) AllDiagnostics() map[string][]Diagnostic {
 
 // Completion requests completion items at a position.
 func (s *Server) Completion(ctx context.Context, path string, pos Position) (*CompletionList, error) {
+	return s.CompletionWithContext(ctx, path, pos, nil)
+}
+
+// CompletionWithTrigger requests completion items triggered by a character.
+func (s *Server) CompletionWithTrigger(ctx context.Context, path string, pos Position, triggerChar string) (*CompletionList, error) {
+	compCtx := &CompletionContext{
+		TriggerKind:      CompletionTriggerKindTriggerCharacter,
+		TriggerCharacter: triggerChar,
+	}
+	return s.CompletionWithContext(ctx, path, pos, compCtx)
+}
+
+// CompletionWithContext requests completion items with full context control.
+func (s *Server) CompletionWithContext(ctx context.Context, path string, pos Position, compCtx *CompletionContext) (*CompletionList, error) {
 	if s.Status() != ServerStatusReady {
 		return nil, ErrServerNotReady
 	}
@@ -615,14 +629,19 @@ func (s *Server) Completion(ctx context.Context, path string, pos Position) (*Co
 
 	uri := FilePathToURI(path)
 
+	// Default to invoked if no context provided
+	if compCtx == nil {
+		compCtx = &CompletionContext{
+			TriggerKind: CompletionTriggerKindInvoked,
+		}
+	}
+
 	params := CompletionParams{
 		TextDocumentPositionParams: TextDocumentPositionParams{
 			TextDocument: TextDocumentIdentifier{URI: uri},
 			Position:     pos,
 		},
-		Context: &CompletionContext{
-			TriggerKind: CompletionTriggerKindInvoked,
-		},
+		Context: compCtx,
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, s.config.Timeout)
@@ -634,6 +653,41 @@ func (s *Server) Completion(ctx context.Context, path string, pos Position) (*Co
 	}
 
 	return ParseCompletionResult(result)
+}
+
+// ResolveCompletionItem resolves additional details for a completion item.
+func (s *Server) ResolveCompletionItem(ctx context.Context, item CompletionItem) (*CompletionItem, error) {
+	if s.Status() != ServerStatusReady {
+		return nil, ErrServerNotReady
+	}
+
+	if s.capabilities.CompletionProvider == nil || !s.capabilities.CompletionProvider.ResolveProvider {
+		// If resolve not supported, return item as-is
+		return &item, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.config.Timeout)
+	defer cancel()
+
+	var result CompletionItem
+	if err := s.transport.Call(ctx, "completionItem/resolve", item, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// CompletionTriggerCharacters returns the trigger characters for completion.
+func (s *Server) CompletionTriggerCharacters() []string {
+	if s.capabilities.CompletionProvider == nil {
+		return nil
+	}
+	return s.capabilities.CompletionProvider.TriggerCharacters
+}
+
+// SupportsCompletionResolve returns true if the server supports completionItem/resolve.
+func (s *Server) SupportsCompletionResolve() bool {
+	return s.capabilities.CompletionProvider != nil && s.capabilities.CompletionProvider.ResolveProvider
 }
 
 // Hover requests hover information at a position.
