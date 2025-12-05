@@ -39,6 +39,9 @@ var (
 
 	// ErrInvalidResponse indicates an invalid response from the server.
 	ErrInvalidResponse = errors.New("invalid response from server")
+
+	// ErrNoServerForFile indicates no server is available for the file type.
+	ErrNoServerForFile = errors.New("no server for file type")
 )
 
 // RPCError represents a JSON-RPC error from the server.

@@ -72,6 +72,16 @@ func (m *Manager) SetWorkspaceFolders(folders []WorkspaceFolder) {
 	m.mu.Unlock()
 }
 
+// WorkspaceRoot returns the root path of the first workspace folder, or empty string if none.
+func (m *Manager) WorkspaceRoot() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.workspaceFolders) > 0 {
+		return URIToFilePath(m.workspaceFolders[0].URI)
+	}
+	return ""
+}
+
 // getOrStartServer returns the server for a language, starting it if needed.
 func (m *Manager) getOrStartServer(ctx context.Context, languageID string) (*Server, error) {
 	m.mu.RLock()
