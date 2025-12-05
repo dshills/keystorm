@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -31,18 +32,25 @@ type PerformanceMonitor struct {
 }
 
 // LatencyTracker tracks latency statistics for an action or globally.
+// Uses Welford's online algorithm for numerically stable variance calculation.
 type LatencyTracker struct {
 	mu sync.RWMutex
 
-	count      uint64
-	totalNanos uint64
-	minNanos   uint64
-	maxNanos   uint64
-	sumSquares uint64 // For variance calculation
+	count    uint64
+	minNanos uint64
+	maxNanos uint64
+
+	// Welford's algorithm state (using float64 to avoid overflow)
+	mean float64 // Running mean in nanoseconds
+	m2   float64 // Sum of squared differences from the mean
 
 	// Histogram buckets (in microseconds)
-	buckets [10]uint64 // <10us, <50us, <100us, <500us, <1ms, <5ms, <10ms, <50ms, <100ms, >=100ms
+	// <10us, <50us, <100us, <500us, <1ms, <5ms, <10ms, <50ms, <100ms, >=100ms
+	buckets [10]uint64
 }
+
+// Bucket boundaries in microseconds for percentile estimation.
+var bucketBoundaries = []int64{10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}
 
 // NewLatencyTracker creates a new latency tracker.
 func NewLatencyTracker() *LatencyTracker {
@@ -53,24 +61,34 @@ func NewLatencyTracker() *LatencyTracker {
 
 // Record records a latency measurement.
 func (lt *LatencyTracker) Record(d time.Duration) {
-	nanos := uint64(d.Nanoseconds())
+	nanos := d.Nanoseconds()
+	if nanos < 0 {
+		nanos = 0
+	}
+	uNanos := uint64(nanos)
+	fNanos := float64(nanos)
 
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
 
 	lt.count++
-	lt.totalNanos += nanos
-	lt.sumSquares += nanos * nanos
 
-	if nanos < lt.minNanos {
-		lt.minNanos = nanos
+	// Welford's online algorithm for mean and variance
+	// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+	delta := fNanos - lt.mean
+	lt.mean += delta / float64(lt.count)
+	delta2 := fNanos - lt.mean
+	lt.m2 += delta * delta2
+
+	if uNanos < lt.minNanos {
+		lt.minNanos = uNanos
 	}
-	if nanos > lt.maxNanos {
-		lt.maxNanos = nanos
+	if uNanos > lt.maxNanos {
+		lt.maxNanos = uNanos
 	}
 
 	// Update histogram
-	micros := nanos / 1000
+	micros := uNanos / 1000
 	switch {
 	case micros < 10:
 		lt.buckets[0]++
@@ -110,13 +128,13 @@ type LatencyStats struct {
 }
 
 // Stats returns computed statistics.
+// The returned LatencyStats is a snapshot and will not be updated.
 func (lt *LatencyTracker) Stats() LatencyStats {
 	lt.mu.RLock()
 	defer lt.mu.RUnlock()
 
 	stats := LatencyStats{
 		Count:     lt.count,
-		TotalTime: time.Duration(lt.totalNanos),
 		Histogram: lt.buckets,
 	}
 
@@ -126,26 +144,28 @@ func (lt *LatencyTracker) Stats() LatencyStats {
 
 	stats.MinTime = time.Duration(lt.minNanos)
 	stats.MaxTime = time.Duration(lt.maxNanos)
-	stats.AvgTime = time.Duration(lt.totalNanos / lt.count)
+	stats.AvgTime = time.Duration(lt.mean)
+	stats.TotalTime = time.Duration(lt.mean * float64(lt.count))
 
-	// Calculate standard deviation
+	// Calculate standard deviation using Welford's algorithm
 	if lt.count > 1 {
-		mean := lt.totalNanos / lt.count
-		variance := (lt.sumSquares / lt.count) - (mean * mean)
-		stats.StdDev = time.Duration(sqrt(variance))
+		variance := lt.m2 / float64(lt.count-1) // Sample variance
+		if variance > 0 {
+			stats.StdDev = time.Duration(math.Sqrt(variance))
+		}
 	}
 
 	// Estimate percentiles from histogram
-	stats.Percentile50 = lt.estimatePercentile(50)
-	stats.Percentile95 = lt.estimatePercentile(95)
-	stats.Percentile99 = lt.estimatePercentile(99)
+	stats.Percentile50 = lt.estimatePercentileLocked(50)
+	stats.Percentile95 = lt.estimatePercentileLocked(95)
+	stats.Percentile99 = lt.estimatePercentileLocked(99)
 
 	return stats
 }
 
-// estimatePercentile estimates a percentile from the histogram.
+// estimatePercentileLocked estimates a percentile from the histogram.
 // Must be called with lock held.
-func (lt *LatencyTracker) estimatePercentile(p int) time.Duration {
+func (lt *LatencyTracker) estimatePercentileLocked(p int) time.Duration {
 	if lt.count == 0 {
 		return 0
 	}
@@ -153,36 +173,20 @@ func (lt *LatencyTracker) estimatePercentile(p int) time.Duration {
 	target := (uint64(p) * lt.count) / 100
 	var cumulative uint64
 
-	// Bucket boundaries in microseconds
-	boundaries := []int64{10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000, 1000000}
-
 	for i, count := range lt.buckets {
 		cumulative += count
 		if cumulative >= target {
 			// Return midpoint of bucket
 			if i == 0 {
-				return time.Duration(boundaries[0]/2) * time.Microsecond
+				return time.Duration(bucketBoundaries[0]/2) * time.Microsecond
 			}
-			mid := (boundaries[i-1] + boundaries[i]) / 2
+			mid := (bucketBoundaries[i-1] + bucketBoundaries[i]) / 2
 			return time.Duration(mid) * time.Microsecond
 		}
 	}
 
-	return time.Duration(boundaries[len(boundaries)-1]) * time.Microsecond
-}
-
-// sqrt computes integer square root using Newton's method.
-func sqrt(n uint64) uint64 {
-	if n == 0 {
-		return 0
-	}
-	x := n
-	y := (x + 1) / 2
-	for y < x {
-		x = y
-		y = (x + n/x) / 2
-	}
-	return x
+	// Last bucket (>=100ms), return 100ms as estimate
+	return 100 * time.Millisecond
 }
 
 // Reset clears all tracked data.
@@ -191,10 +195,10 @@ func (lt *LatencyTracker) Reset() {
 	defer lt.mu.Unlock()
 
 	lt.count = 0
-	lt.totalNanos = 0
 	lt.minNanos = ^uint64(0)
 	lt.maxNanos = 0
-	lt.sumSquares = 0
+	lt.mean = 0
+	lt.m2 = 0
 	lt.buckets = [10]uint64{}
 }
 
@@ -466,7 +470,10 @@ func (b *Benchmark) Reset() {
 }
 
 // DispatchOptimizer provides utilities for optimizing dispatch performance.
+// It is safe for concurrent use.
 type DispatchOptimizer struct {
+	mu sync.RWMutex
+
 	// Hot path actions that should be optimized
 	hotPaths map[string]bool
 
@@ -486,11 +493,15 @@ func NewDispatchOptimizer() *DispatchOptimizer {
 
 // MarkHotPath marks an action as a hot path for optimization.
 func (o *DispatchOptimizer) MarkHotPath(actionName string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	o.hotPaths[actionName] = true
 }
 
 // IsHotPath returns true if the action is marked as a hot path.
 func (o *DispatchOptimizer) IsHotPath(actionName string) bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	return o.hotPaths[actionName]
 }
 
@@ -530,7 +541,11 @@ type ActionBatcher struct {
 }
 
 // NewActionBatcher creates a new action batcher.
+// If maxSize <= 0, it defaults to 10 to prevent immediate/infinite flushing.
 func NewActionBatcher(maxSize int, interval time.Duration, dispatch func([]input.Action)) *ActionBatcher {
+	if maxSize <= 0 {
+		maxSize = 10 // Sensible default
+	}
 	return &ActionBatcher{
 		actions:  make([]input.Action, 0, maxSize),
 		maxSize:  maxSize,

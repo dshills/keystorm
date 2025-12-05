@@ -245,26 +245,36 @@ func (s *System) initializeHooks(config SystemConfig) {
 
 // SetEngine sets the text engine for all operations.
 func (s *System) SetEngine(engine execctx.EngineInterface) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.dispatcher.SetEngine(engine)
 }
 
 // SetCursors sets the cursor manager.
 func (s *System) SetCursors(cursors execctx.CursorManagerInterface) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.dispatcher.SetCursors(cursors)
 }
 
 // SetModeManager sets the mode manager.
 func (s *System) SetModeManager(modeManager execctx.ModeManagerInterface) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.dispatcher.SetModeManager(modeManager)
 }
 
 // SetHistory sets the history/undo manager.
 func (s *System) SetHistory(history execctx.HistoryInterface) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.dispatcher.SetHistory(history)
 }
 
 // SetRenderer sets the renderer.
 func (s *System) SetRenderer(renderer execctx.RendererInterface) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.dispatcher.SetRenderer(renderer)
 }
 
