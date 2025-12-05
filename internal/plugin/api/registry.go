@@ -214,6 +214,9 @@ type Context struct {
 
 	// Config provides configuration operations.
 	Config ConfigProvider
+
+	// LSP provides language server protocol operations (completions, diagnostics, etc.).
+	LSP LSPProvider
 }
 
 // BufferProvider defines the interface for buffer operations.
