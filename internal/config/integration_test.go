@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -566,10 +567,13 @@ func TestVersion_Compare(t *testing.T) {
 func BenchmarkConfigSystem_Get(b *testing.B) {
 	tmpDir := b.TempDir()
 
-	sys, _ := NewConfigSystem(context.Background(),
+	sys, err := NewConfigSystem(context.Background(),
 		WithSystemUserConfigDir(tmpDir),
 		WithSystemWatcher(false),
 	)
+	if err != nil {
+		b.Fatalf("NewConfigSystem() error = %v", err)
+	}
 	defer sys.Close()
 
 	b.ResetTimer()
@@ -581,10 +585,13 @@ func BenchmarkConfigSystem_Get(b *testing.B) {
 func BenchmarkConfigSystem_GetInt(b *testing.B) {
 	tmpDir := b.TempDir()
 
-	sys, _ := NewConfigSystem(context.Background(),
+	sys, err := NewConfigSystem(context.Background(),
 		WithSystemUserConfigDir(tmpDir),
 		WithSystemWatcher(false),
 	)
+	if err != nil {
+		b.Fatalf("NewConfigSystem() error = %v", err)
+	}
 	defer sys.Close()
 
 	b.ResetTimer()
@@ -596,10 +603,13 @@ func BenchmarkConfigSystem_GetInt(b *testing.B) {
 func BenchmarkConfigSystem_Editor(b *testing.B) {
 	tmpDir := b.TempDir()
 
-	sys, _ := NewConfigSystem(context.Background(),
+	sys, err := NewConfigSystem(context.Background(),
 		WithSystemUserConfigDir(tmpDir),
 		WithSystemWatcher(false),
 	)
+	if err != nil {
+		b.Fatalf("NewConfigSystem() error = %v", err)
+	}
 	defer sys.Close()
 
 	b.ResetTimer()
@@ -611,10 +621,13 @@ func BenchmarkConfigSystem_Editor(b *testing.B) {
 func BenchmarkConfigSystem_Merged(b *testing.B) {
 	tmpDir := b.TempDir()
 
-	sys, _ := NewConfigSystem(context.Background(),
+	sys, err := NewConfigSystem(context.Background(),
 		WithSystemUserConfigDir(tmpDir),
 		WithSystemWatcher(false),
 	)
+	if err != nil {
+		b.Fatalf("NewConfigSystem() error = %v", err)
+	}
 	defer sys.Close()
 
 	b.ResetTimer()
@@ -626,10 +639,13 @@ func BenchmarkConfigSystem_Merged(b *testing.B) {
 func BenchmarkConfigSystem_ConcurrentReads(b *testing.B) {
 	tmpDir := b.TempDir()
 
-	sys, _ := NewConfigSystem(context.Background(),
+	sys, err := NewConfigSystem(context.Background(),
 		WithSystemUserConfigDir(tmpDir),
 		WithSystemWatcher(false),
 	)
+	if err != nil {
+		b.Fatalf("NewConfigSystem() error = %v", err)
+	}
 	defer sys.Close()
 
 	b.ResetTimer()
@@ -708,6 +724,107 @@ format = "text"
 	}
 
 	t.Logf("Config load time: %v", loadTime)
+}
+
+func TestConfigSystem_ClosedBehavior(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sys, err := NewConfigSystem(context.Background(),
+		WithSystemUserConfigDir(tmpDir),
+		WithSystemWatcher(false),
+	)
+	if err != nil {
+		t.Fatalf("NewConfigSystem() error = %v", err)
+	}
+
+	// Close the system
+	sys.Close()
+
+	// Verify Config() returns nil after close
+	if sys.Config() != nil {
+		t.Error("Config() should return nil after Close()")
+	}
+
+	// Verify Reload returns error after close
+	if err := sys.Reload(context.Background()); err != ErrSystemClosed {
+		t.Errorf("Reload() after close = %v, want ErrSystemClosed", err)
+	}
+
+	// Verify Set returns error after close
+	if err := sys.Set("editor.tabSize", 4); err != ErrSystemClosed {
+		t.Errorf("Set() after close = %v, want ErrSystemClosed", err)
+	}
+
+	// Verify Subscribe returns nil after close
+	if sub := sys.Subscribe(func(notify.Change) {}); sub != nil {
+		t.Error("Subscribe() should return nil after Close()")
+	}
+
+	// Verify SubscribePath returns nil after close
+	if sub := sys.SubscribePath("editor", func(notify.Change) {}); sub != nil {
+		t.Error("SubscribePath() should return nil after Close()")
+	}
+
+	// Verify Close is idempotent (no panic)
+	sys.Close()
+}
+
+func TestMigrator_NewerVersionError(t *testing.T) {
+	m := NewMigrator(Version{1, 0, 0})
+
+	// Try to migrate data with a newer version
+	data := map[string]any{"_version": "2.0.0"}
+	_, _, err := m.Migrate(data)
+
+	if err == nil {
+		t.Error("Migrate() should return error for newer version")
+	}
+	if !errors.Is(err, ErrNewerVersion) {
+		t.Errorf("Migrate() error = %v, want ErrNewerVersion", err)
+	}
+}
+
+func TestMigrator_MigrationGapError(t *testing.T) {
+	m := NewMigrator(Version{2, 0, 0})
+
+	// Register migration from 1.0.0 to 2.0.0 but not from 0.0.0 to 1.0.0
+	m.Register(Migration{
+		FromVersion: Version{1, 0, 0},
+		ToVersion:   Version{2, 0, 0},
+		Description: "Skip migration",
+		Migrate: func(data map[string]any) (map[string]any, error) {
+			return data, nil
+		},
+	})
+
+	// Try to migrate from 0.0.0 - should fail due to gap
+	data := map[string]any{}
+	_, _, err := m.Migrate(data)
+
+	if err == nil {
+		t.Error("Migrate() should return error for migration gap")
+	}
+	if !errors.Is(err, ErrMigrationGap) {
+		t.Errorf("Migrate() error = %v, want ErrMigrationGap", err)
+	}
+}
+
+func TestMigrator_AlreadyAtCurrentVersion(t *testing.T) {
+	m := NewMigrator(Version{1, 0, 0})
+
+	// Data is already at current version
+	data := map[string]any{"_version": "1.0.0", "value": "unchanged"}
+	migrated, results, err := m.Migrate(data)
+
+	if err != nil {
+		t.Errorf("Migrate() error = %v, want nil", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("Migrate() returned %d results, want 0", len(results))
+	}
+	if migrated["value"] != "unchanged" {
+		t.Error("Data should be unchanged when already at current version")
+	}
 }
 
 func TestConfigSystem_FileWatchReload(t *testing.T) {

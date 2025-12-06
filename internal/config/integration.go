@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,9 @@ import (
 
 	"github.com/dshills/keystorm/internal/config/notify"
 )
+
+// ErrSystemClosed is returned when operations are attempted on a closed ConfigSystem.
+var ErrSystemClosed = errors.New("config system is closed")
 
 // ConfigSystem provides a high-level facade for the configuration system.
 // It wraps Config with additional functionality for system integration.
@@ -96,12 +100,18 @@ func NewConfigSystem(ctx context.Context, opts ...SystemOption) (*ConfigSystem, 
 		return nil, fmt.Errorf("loading configuration: %w", err)
 	}
 	loadTime := time.Since(start)
+	now := time.Now()
 
-	return &ConfigSystem{
-		config:       cfg,
-		loadTime:     loadTime,
-		lastReloadAt: time.Now(),
-	}, nil
+	sys := &ConfigSystem{
+		config: cfg,
+	}
+	// Initialize timing fields under the mutex for memory safety
+	sys.mu.Lock()
+	sys.loadTime = loadTime
+	sys.lastReloadAt = now
+	sys.mu.Unlock()
+
+	return sys, nil
 }
 
 // Close shuts down the configuration system and releases resources.
@@ -116,7 +126,12 @@ func (s *ConfigSystem) Close() {
 }
 
 // Config returns the underlying Config instance for advanced usage.
+// The caller must not call Close() on the returned Config or modify its lifecycle.
+// Returns nil if the ConfigSystem has been closed.
 func (s *ConfigSystem) Config() *Config {
+	if s.closed.Load() {
+		return nil
+	}
 	return s.config
 }
 
@@ -135,7 +150,11 @@ func (s *ConfigSystem) LastReloadAt() time.Time {
 }
 
 // Reload reloads configuration from all sources.
+// Returns ErrSystemClosed if the system has been closed.
 func (s *ConfigSystem) Reload(ctx context.Context) error {
+	if s.closed.Load() {
+		return ErrSystemClosed
+	}
 	start := time.Now()
 	if err := s.config.Load(ctx); err != nil {
 		return fmt.Errorf("reloading configuration: %w", err)
@@ -180,17 +199,29 @@ func (s *ConfigSystem) GetStringSlice(path string) ([]string, error) {
 }
 
 // Set sets a value at the given path in the user settings layer.
+// Returns ErrSystemClosed if the system has been closed.
 func (s *ConfigSystem) Set(path string, value any) error {
+	if s.closed.Load() {
+		return ErrSystemClosed
+	}
 	return s.config.Set(path, value)
 }
 
 // Subscribe registers an observer for all configuration changes.
+// Returns nil if the system has been closed.
 func (s *ConfigSystem) Subscribe(observer notify.Observer) *notify.Subscription {
+	if s.closed.Load() {
+		return nil
+	}
 	return s.config.Subscribe(observer)
 }
 
 // SubscribePath registers an observer for changes to a specific path.
+// Returns nil if the system has been closed.
 func (s *ConfigSystem) SubscribePath(path string, observer notify.Observer) *notify.Subscription {
+	if s.closed.Load() {
+		return nil
+	}
 	return s.config.SubscribePath(path, observer)
 }
 

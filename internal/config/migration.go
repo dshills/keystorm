@@ -79,9 +79,13 @@ func (m *Migrator) CurrentVersion() Version {
 // Register adds a migration to the migrator.
 func (m *Migrator) Register(migration Migration) {
 	m.migrations = append(m.migrations, migration)
-	// Sort migrations by source version
+	// Sort migrations by (FromVersion, ToVersion) for deterministic ordering
 	sort.Slice(m.migrations, func(i, j int) bool {
-		return m.migrations[i].FromVersion.Compare(m.migrations[j].FromVersion) < 0
+		cmp := m.migrations[i].FromVersion.Compare(m.migrations[j].FromVersion)
+		if cmp != 0 {
+			return cmp < 0
+		}
+		return m.migrations[i].ToVersion.Compare(m.migrations[j].ToVersion) < 0
 	})
 }
 
@@ -91,46 +95,73 @@ func (m *Migrator) NeedsMigration(data map[string]any) bool {
 	return v.Compare(m.current) < 0
 }
 
+// ErrNewerVersion is returned when the configuration version is newer than the migrator's current version.
+var ErrNewerVersion = fmt.Errorf("configuration version is newer than current version")
+
+// ErrMigrationGap is returned when no migration exists for the current data version.
+var ErrMigrationGap = fmt.Errorf("no migration registered for current data version")
+
 // Migrate performs all necessary migrations to bring the configuration
-// to the current version.
+// to the current version. Migrations are applied sequentially, requiring
+// each migration's FromVersion to match the current data version.
+//
+// Returns ErrNewerVersion if the data version is newer than the migrator's current version.
+// Returns ErrMigrationGap if no migration exists for the current data version.
 func (m *Migrator) Migrate(data map[string]any) (map[string]any, []MigrationResult, error) {
-	fromVersion := m.extractVersion(data)
+	dataVersion := m.extractVersion(data)
 	results := make([]MigrationResult, 0)
 
-	// Find applicable migrations
-	for _, migration := range m.migrations {
-		// Skip migrations that are before our current version
-		if migration.FromVersion.Compare(fromVersion) < 0 {
-			continue
+	// Check if data version is newer than current - don't downgrade
+	if dataVersion.Compare(m.current) > 0 {
+		return data, results, fmt.Errorf("%w: data version %s > current %s",
+			ErrNewerVersion, dataVersion, m.current)
+	}
+
+	// Already at current version - nothing to do
+	if dataVersion.Compare(m.current) == 0 {
+		return data, results, nil
+	}
+
+	// Apply migrations sequentially, matching FromVersion exactly
+	for dataVersion.Compare(m.current) < 0 {
+		// Find a migration that starts from the current data version
+		var foundMigration *Migration
+		for i := range m.migrations {
+			migration := &m.migrations[i]
+			if migration.FromVersion.Compare(dataVersion) == 0 &&
+				migration.ToVersion.Compare(m.current) <= 0 {
+				foundMigration = migration
+				break
+			}
 		}
 
-		// Skip migrations that target beyond current version
-		if migration.ToVersion.Compare(m.current) > 0 {
-			continue
+		if foundMigration == nil {
+			return data, results, fmt.Errorf("%w: no migration from version %s",
+				ErrMigrationGap, dataVersion)
 		}
 
-		// Apply migration
-		migrated, err := migration.Migrate(data)
+		// Apply the migration
+		migrated, err := foundMigration.Migrate(data)
 		result := MigrationResult{
-			FromVersion: migration.FromVersion,
-			ToVersion:   migration.ToVersion,
-			Description: migration.Description,
+			FromVersion: foundMigration.FromVersion,
+			ToVersion:   foundMigration.ToVersion,
+			Description: foundMigration.Description,
 		}
 
 		if err != nil {
 			result.Error = err
 			results = append(results, result)
 			return data, results, fmt.Errorf("migration from %s to %s failed: %w",
-				migration.FromVersion, migration.ToVersion, err)
+				foundMigration.FromVersion, foundMigration.ToVersion, err)
 		}
 
 		result.Success = true
 		results = append(results, result)
 		data = migrated
-		fromVersion = migration.ToVersion
+		dataVersion = foundMigration.ToVersion
 	}
 
-	// Set the version to current
+	// Update the version to current after successful migration
 	data["_version"] = m.current.String()
 
 	return data, results, nil
