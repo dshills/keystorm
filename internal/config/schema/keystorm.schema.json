@@ -1,0 +1,551 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keystorm.dev/config/schema.json",
+  "title": "Keystorm Configuration",
+  "description": "Configuration schema for the Keystorm AI-native programming editor",
+  "type": "object",
+  "properties": {
+    "editor": {
+      "type": "object",
+      "description": "Editor behavior settings",
+      "properties": {
+        "tabSize": {
+          "type": "integer",
+          "description": "Number of spaces per tab",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 16,
+          "x-scope": "all"
+        },
+        "insertSpaces": {
+          "type": "boolean",
+          "description": "Use spaces instead of tabs",
+          "default": true,
+          "x-scope": "all"
+        },
+        "wordWrap": {
+          "type": "string",
+          "description": "Word wrap mode",
+          "enum": ["off", "on", "wordWrapColumn", "bounded"],
+          "default": "off",
+          "x-scope": "all"
+        },
+        "wordWrapColumn": {
+          "type": "integer",
+          "description": "Column at which to wrap lines",
+          "default": 80,
+          "minimum": 20,
+          "maximum": 500,
+          "x-scope": "all"
+        },
+        "lineNumbers": {
+          "type": "string",
+          "description": "Line number display mode",
+          "enum": ["off", "on", "relative", "interval"],
+          "default": "on",
+          "x-scope": "all"
+        },
+        "cursorStyle": {
+          "type": "string",
+          "description": "Cursor style",
+          "enum": ["block", "line", "underline"],
+          "default": "block",
+          "x-scope": "global"
+        },
+        "cursorBlinking": {
+          "type": "string",
+          "description": "Cursor blinking style",
+          "enum": ["blink", "smooth", "phase", "expand", "solid"],
+          "default": "blink",
+          "x-scope": "global"
+        },
+        "scrollBeyondLastLine": {
+          "type": "boolean",
+          "description": "Allow scrolling past the last line",
+          "default": true,
+          "x-scope": "all"
+        },
+        "smoothScrolling": {
+          "type": "boolean",
+          "description": "Enable smooth scrolling",
+          "default": true,
+          "x-scope": "global"
+        },
+        "fontSize": {
+          "type": "integer",
+          "description": "Editor font size in points",
+          "default": 14,
+          "minimum": 6,
+          "maximum": 72,
+          "x-scope": "global"
+        },
+        "fontFamily": {
+          "type": "string",
+          "description": "Editor font family",
+          "default": "monospace",
+          "x-scope": "global"
+        },
+        "autoIndent": {
+          "type": "string",
+          "description": "Auto-indent mode",
+          "enum": ["none", "keep", "brackets", "advanced"],
+          "default": "advanced",
+          "x-scope": "all"
+        },
+        "formatOnSave": {
+          "type": "boolean",
+          "description": "Format document on save",
+          "default": false,
+          "x-scope": "all"
+        },
+        "formatOnPaste": {
+          "type": "boolean",
+          "description": "Format pasted content",
+          "default": false,
+          "x-scope": "all"
+        },
+        "trimTrailingWhitespace": {
+          "type": "boolean",
+          "description": "Remove trailing whitespace on save",
+          "default": true,
+          "x-scope": "all"
+        },
+        "insertFinalNewline": {
+          "type": "boolean",
+          "description": "Ensure file ends with newline",
+          "default": true,
+          "x-scope": "all"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "description": "User interface settings",
+      "properties": {
+        "theme": {
+          "type": "string",
+          "description": "Color theme name",
+          "default": "dark",
+          "x-scope": "global"
+        },
+        "showStatusBar": {
+          "type": "boolean",
+          "description": "Show the status bar",
+          "default": true,
+          "x-scope": "global"
+        },
+        "showLineNumbers": {
+          "type": "boolean",
+          "description": "Show line numbers in gutter",
+          "default": true,
+          "x-scope": "all"
+        },
+        "showMinimap": {
+          "type": "boolean",
+          "description": "Show code minimap",
+          "default": true,
+          "x-scope": "global"
+        },
+        "minimapWidth": {
+          "type": "integer",
+          "description": "Minimap width in pixels",
+          "default": 100,
+          "minimum": 50,
+          "maximum": 300,
+          "x-scope": "global"
+        },
+        "sidebarPosition": {
+          "type": "string",
+          "description": "Sidebar position",
+          "enum": ["left", "right"],
+          "default": "left",
+          "x-scope": "global"
+        },
+        "activityBarVisible": {
+          "type": "boolean",
+          "description": "Show activity bar",
+          "default": true,
+          "x-scope": "global"
+        },
+        "tabSize": {
+          "type": "string",
+          "description": "Tab bar size",
+          "enum": ["small", "medium", "large"],
+          "default": "medium",
+          "x-scope": "global"
+        }
+      },
+      "additionalProperties": false
+    },
+    "vim": {
+      "type": "object",
+      "description": "Vim mode settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Vim keybindings",
+          "default": true,
+          "x-scope": "global"
+        },
+        "startInInsertMode": {
+          "type": "boolean",
+          "description": "Start in insert mode instead of normal mode",
+          "default": false,
+          "x-scope": "global"
+        },
+        "useSystemClipboard": {
+          "type": "boolean",
+          "description": "Use system clipboard for yank/paste",
+          "default": true,
+          "x-scope": "global"
+        },
+        "hlsearch": {
+          "type": "boolean",
+          "description": "Highlight search matches",
+          "default": true,
+          "x-scope": "global"
+        },
+        "incsearch": {
+          "type": "boolean",
+          "description": "Incremental search",
+          "default": true,
+          "x-scope": "global"
+        },
+        "ignorecase": {
+          "type": "boolean",
+          "description": "Case-insensitive search by default",
+          "default": true,
+          "x-scope": "global"
+        },
+        "smartcase": {
+          "type": "boolean",
+          "description": "Smart case sensitivity (case-sensitive if uppercase present)",
+          "default": true,
+          "x-scope": "global"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Key sequence timeout in milliseconds",
+          "default": 1000,
+          "minimum": 100,
+          "maximum": 10000,
+          "x-scope": "global"
+        },
+        "leader": {
+          "type": "string",
+          "description": "Leader key",
+          "default": "\\",
+          "x-scope": "global"
+        }
+      },
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "object",
+      "description": "File handling settings",
+      "properties": {
+        "autoSave": {
+          "type": "string",
+          "description": "Auto-save mode",
+          "enum": ["off", "afterDelay", "onFocusChange", "onWindowChange"],
+          "default": "off",
+          "x-scope": "all"
+        },
+        "autoSaveDelay": {
+          "type": "integer",
+          "description": "Auto-save delay in milliseconds",
+          "default": 1000,
+          "minimum": 100,
+          "maximum": 60000,
+          "x-scope": "all"
+        },
+        "encoding": {
+          "type": "string",
+          "description": "Default file encoding",
+          "default": "utf-8",
+          "x-scope": "all"
+        },
+        "eol": {
+          "type": "string",
+          "description": "Default end-of-line character",
+          "enum": ["\\n", "\\r\\n", "auto"],
+          "default": "auto",
+          "x-scope": "all"
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Glob patterns for files to exclude",
+          "items": {
+            "type": "string"
+          },
+          "default": ["**/.git", "**/node_modules", "**/.DS_Store"],
+          "x-scope": "all"
+        },
+        "watcherExclude": {
+          "type": "array",
+          "description": "Glob patterns for paths to exclude from file watching",
+          "items": {
+            "type": "string"
+          },
+          "default": ["**/.git/objects/**", "**/node_modules/**"],
+          "x-scope": "workspace"
+        }
+      },
+      "additionalProperties": false
+    },
+    "search": {
+      "type": "object",
+      "description": "Search settings",
+      "properties": {
+        "exclude": {
+          "type": "array",
+          "description": "Glob patterns to exclude from search",
+          "items": {
+            "type": "string"
+          },
+          "default": ["**/node_modules", "**/.git", "**/dist"],
+          "x-scope": "all"
+        },
+        "useIgnoreFiles": {
+          "type": "boolean",
+          "description": "Respect .gitignore and other ignore files",
+          "default": true,
+          "x-scope": "all"
+        },
+        "followSymlinks": {
+          "type": "boolean",
+          "description": "Follow symbolic links in search",
+          "default": true,
+          "x-scope": "all"
+        },
+        "maxResults": {
+          "type": "integer",
+          "description": "Maximum search results",
+          "default": 10000,
+          "minimum": 100,
+          "maximum": 100000,
+          "x-scope": "global"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ai": {
+      "type": "object",
+      "description": "AI integration settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable AI features",
+          "default": true,
+          "x-scope": "global"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Default AI provider",
+          "enum": ["openai", "anthropic", "local"],
+          "default": "anthropic",
+          "x-scope": "global"
+        },
+        "model": {
+          "type": "string",
+          "description": "Default AI model",
+          "default": "claude-sonnet-4-20250514",
+          "x-scope": "global"
+        },
+        "openaiApiKey": {
+          "type": "string",
+          "description": "OpenAI API key",
+          "x-scope": "global",
+          "x-tags": ["secret"]
+        },
+        "anthropicApiKey": {
+          "type": "string",
+          "description": "Anthropic API key",
+          "x-scope": "global",
+          "x-tags": ["secret"]
+        },
+        "temperature": {
+          "type": "number",
+          "description": "Model temperature for generation",
+          "default": 0.7,
+          "minimum": 0,
+          "maximum": 2,
+          "x-scope": "global"
+        },
+        "maxTokens": {
+          "type": "integer",
+          "description": "Maximum tokens for AI responses",
+          "default": 4096,
+          "minimum": 100,
+          "maximum": 100000,
+          "x-scope": "global"
+        },
+        "inlineCompletion": {
+          "type": "boolean",
+          "description": "Enable inline AI completions",
+          "default": true,
+          "x-scope": "all"
+        },
+        "autoSuggestions": {
+          "type": "boolean",
+          "description": "Automatically suggest AI actions",
+          "default": true,
+          "x-scope": "global"
+        }
+      },
+      "additionalProperties": false
+    },
+    "logging": {
+      "type": "object",
+      "description": "Logging settings",
+      "properties": {
+        "level": {
+          "type": "string",
+          "description": "Log level",
+          "enum": ["trace", "debug", "info", "warn", "error", "fatal"],
+          "default": "info",
+          "x-scope": "global"
+        },
+        "file": {
+          "type": "string",
+          "description": "Log file path",
+          "format": "path",
+          "x-scope": "global"
+        },
+        "maxSize": {
+          "type": "integer",
+          "description": "Maximum log file size in MB",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 1000,
+          "x-scope": "global"
+        },
+        "maxBackups": {
+          "type": "integer",
+          "description": "Maximum number of log backups",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 100,
+          "x-scope": "global"
+        }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "description": "Path settings",
+      "properties": {
+        "configDir": {
+          "type": "string",
+          "description": "Configuration directory path",
+          "format": "path",
+          "x-scope": "global"
+        },
+        "dataDir": {
+          "type": "string",
+          "description": "Data directory path",
+          "format": "path",
+          "x-scope": "global"
+        },
+        "cacheDir": {
+          "type": "string",
+          "description": "Cache directory path",
+          "format": "path",
+          "x-scope": "global"
+        },
+        "pluginDir": {
+          "type": "string",
+          "description": "Plugin directory path",
+          "format": "path",
+          "x-scope": "global"
+        }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "description": "Integrated terminal settings",
+      "properties": {
+        "shell": {
+          "type": "string",
+          "description": "Shell executable path",
+          "format": "path",
+          "x-scope": "global"
+        },
+        "fontSize": {
+          "type": "integer",
+          "description": "Terminal font size",
+          "default": 14,
+          "minimum": 6,
+          "maximum": 72,
+          "x-scope": "global"
+        },
+        "fontFamily": {
+          "type": "string",
+          "description": "Terminal font family",
+          "default": "monospace",
+          "x-scope": "global"
+        },
+        "cursorStyle": {
+          "type": "string",
+          "description": "Terminal cursor style",
+          "enum": ["block", "line", "underline"],
+          "default": "block",
+          "x-scope": "global"
+        },
+        "scrollback": {
+          "type": "integer",
+          "description": "Terminal scrollback lines",
+          "default": 10000,
+          "minimum": 100,
+          "maximum": 100000,
+          "x-scope": "global"
+        }
+      },
+      "additionalProperties": false
+    },
+    "lsp": {
+      "type": "object",
+      "description": "Language Server Protocol settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable LSP features",
+          "default": true,
+          "x-scope": "all"
+        },
+        "diagnosticsDelay": {
+          "type": "integer",
+          "description": "Delay before showing diagnostics in milliseconds",
+          "default": 500,
+          "minimum": 0,
+          "maximum": 5000,
+          "x-scope": "global"
+        },
+        "completionTriggerCharacters": {
+          "type": "array",
+          "description": "Characters that trigger completion",
+          "items": {
+            "type": "string",
+            "maxLength": 1
+          },
+          "default": [".", ":", "<"],
+          "x-scope": "language"
+        },
+        "signatureHelpTriggerCharacters": {
+          "type": "array",
+          "description": "Characters that trigger signature help",
+          "items": {
+            "type": "string",
+            "maxLength": 1
+          },
+          "default": ["(", ","],
+          "x-scope": "language"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}
