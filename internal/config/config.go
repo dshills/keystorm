@@ -30,6 +30,9 @@ type Config struct {
 	// Change notifier
 	notifier *notify.Notifier
 
+	// Plugin manager for plugin configuration
+	plugins *PluginManager
+
 	// Configuration paths
 	userConfigDir    string
 	projectConfigDir string
@@ -105,6 +108,13 @@ func New(opts ...Option) *Config {
 		c.watcher.OnChange(c.handleFileChange)
 	}
 
+	// Initialize plugin manager.
+	// This is safe because:
+	// 1. NewPluginManager only stores references, it doesn't invoke callbacks
+	// 2. The notifier is already initialized above
+	// 3. PluginManager methods that need Config use thread-safe accessors (c.Get)
+	c.plugins = NewPluginManager(c, c.notifier)
+
 	return c
 }
 
@@ -147,7 +157,17 @@ func (c *Config) Load(_ context.Context) error {
 	// Release lock before starting watcher to avoid deadlock
 	// (watcher callbacks acquire the same lock)
 	w := c.watcher
+	plugins := c.plugins
 	c.mu.Unlock()
+
+	// Load plugin configuration from the config layers.
+	// This is called outside the Config lock because:
+	// 1. LoadFromConfig has its own internal locking (PluginManager.mu)
+	// 2. It calls c.Get() which acquires c.mu.RLock, avoiding deadlock
+	// 3. The plugin manager reference is stable after initialization
+	if plugins != nil {
+		plugins.LoadFromConfig()
+	}
 
 	// Start file watcher outside the lock
 	if w != nil {
@@ -634,4 +654,31 @@ func typeName(v any) string {
 	default:
 		return "unknown"
 	}
+}
+
+// Plugins returns the plugin manager for plugin configuration.
+// The returned PluginManager is thread-safe and can be used concurrently.
+func (c *Config) Plugins() *PluginManager {
+	c.mu.RLock()
+	pm := c.plugins
+	c.mu.RUnlock()
+	return pm
+}
+
+// Plugin returns the configuration for a specific plugin.
+// Returns nil if the plugin is not registered.
+// The returned PluginConfig is a snapshot; mutations do not affect the config.
+func (c *Config) Plugin(name string) *PluginConfig {
+	c.mu.RLock()
+	pm := c.plugins
+	c.mu.RUnlock()
+
+	if pm == nil {
+		return nil
+	}
+	pc, ok := pm.GetPluginConfig(name)
+	if !ok {
+		return nil
+	}
+	return pc
 }

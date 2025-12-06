@@ -175,6 +175,13 @@ func (n *Notifier) SubscribePath(path string, observer Observer) *Subscription {
 	}
 }
 
+// SubscribePrefix registers an observer for all changes under a path prefix.
+// For example, subscribing to "plugins" receives changes to "plugins.myplugin.settings.foo".
+// This is an alias for SubscribePath since the path matching logic already handles prefixes.
+func (n *Notifier) SubscribePrefix(prefix string, observer Observer) *Subscription {
+	return n.SubscribePath(prefix, observer)
+}
+
 // Notify sends a change notification to all relevant observers.
 func (n *Notifier) Notify(change Change) {
 	n.mu.RLock()

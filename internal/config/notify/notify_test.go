@@ -413,3 +413,32 @@ func TestNotifier_CloseIdempotentAsync(t *testing.T) {
 	// Notify after close should not panic or block
 	n.Notify(Change{Path: "test", Type: ChangeSet})
 }
+
+func TestNotifier_SubscribePrefix(t *testing.T) {
+	n := New()
+	defer n.Close()
+
+	var received []Change
+	var mu sync.Mutex
+
+	// Subscribe to "plugins" prefix - should receive changes under plugins.*
+	sub := n.SubscribePrefix("plugins", func(change Change) {
+		mu.Lock()
+		received = append(received, change)
+		mu.Unlock()
+	})
+	defer sub.Unsubscribe()
+
+	// Send changes to various paths
+	n.NotifySet("plugins.myplugin.settings.foo", nil, "bar", "test")
+	n.NotifySet("plugins.myplugin.enabled", nil, true, "test")
+	n.NotifySet("editor.tabSize", nil, 4, "test") // Should NOT match
+
+	mu.Lock()
+	count := len(received)
+	mu.Unlock()
+
+	if count != 2 {
+		t.Errorf("SubscribePrefix received %d notifications, want 2", count)
+	}
+}
