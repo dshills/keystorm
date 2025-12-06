@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -32,6 +33,9 @@ type Config struct {
 
 	// Plugin manager for plugin configuration
 	plugins *PluginManager
+
+	// Keymap manager for keymap configuration
+	keymaps *KeymapManager
 
 	// Configuration paths
 	userConfigDir    string
@@ -115,6 +119,10 @@ func New(opts ...Option) *Config {
 	// 3. PluginManager methods that need Config use thread-safe accessors (c.Get)
 	c.plugins = NewPluginManager(c, c.notifier)
 
+	// Initialize keymap manager.
+	// Similar to plugin manager, NewKeymapManager only stores references.
+	c.keymaps = NewKeymapManager(c, c.notifier)
+
 	return c
 }
 
@@ -158,6 +166,7 @@ func (c *Config) Load(_ context.Context) error {
 	// (watcher callbacks acquire the same lock)
 	w := c.watcher
 	plugins := c.plugins
+	keymaps := c.keymaps
 	c.mu.Unlock()
 
 	// Load plugin configuration from the config layers.
@@ -167,6 +176,18 @@ func (c *Config) Load(_ context.Context) error {
 	// 3. The plugin manager reference is stable after initialization
 	if plugins != nil {
 		plugins.LoadFromConfig()
+	}
+
+	// Load keymap configuration.
+	// 1. Load default keymaps first (lowest priority)
+	// 2. Then load user keymaps from config (higher priority, override defaults)
+	if keymaps != nil {
+		if err := keymaps.LoadDefaults(); err != nil {
+			return fmt.Errorf("loading default keymaps: %w", err)
+		}
+		if err := keymaps.LoadFromConfig(); err != nil {
+			return fmt.Errorf("loading user keymaps: %w", err)
+		}
 	}
 
 	// Start file watcher outside the lock
@@ -681,4 +702,13 @@ func (c *Config) Plugin(name string) *PluginConfig {
 		return nil
 	}
 	return pc
+}
+
+// Keymaps returns the keymap manager for keymap configuration.
+// The returned KeymapManager is thread-safe and can be used concurrently.
+func (c *Config) Keymaps() *KeymapManager {
+	c.mu.RLock()
+	keymaps := c.keymaps
+	c.mu.RUnlock()
+	return keymaps
 }
