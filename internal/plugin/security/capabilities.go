@@ -61,6 +61,9 @@ const (
 
 	// CapabilityLSP grants LSP client access.
 	CapabilityLSP Capability = "editor.lsp"
+
+	// CapabilityProject grants project/workspace access.
+	CapabilityProject Capability = "editor.project"
 )
 
 // CapabilityInfo provides metadata about a capability.
@@ -238,6 +241,14 @@ var capabilityRegistry = map[Capability]CapabilityInfo{
 		Parent:               CapabilityEditor,
 		RiskLevel:            RiskLow,
 		RequiresUserApproval: false,
+	},
+	CapabilityProject: {
+		Name:                 CapabilityProject,
+		DisplayName:          "Project Access",
+		Description:          "Access project/workspace operations including file enumeration, search, and workspace roots",
+		Parent:               CapabilityEditor,
+		RiskLevel:            RiskMedium,
+		RequiresUserApproval: true,
 	},
 }
 

@@ -137,9 +137,10 @@ func installKSLoader(L *lua.LState) error {
 	// Create the ks module table
 	ksModule := L.NewTable()
 
-	// Collect all _ks_* globals into the ks table
-	// Note: keymap and command are added to support Phase 4
-	moduleNames := []string{"buf", "cursor", "mode", "util", "keymap", "command", "event", "config", "ui", "lsp"}
+	// Collect all _ks_* globals into the ks table.
+	// Only modules that were successfully registered (based on capability checks) will have
+	// their _ks_* global set, so this effectively respects capability restrictions.
+	moduleNames := []string{"buf", "cursor", "mode", "util", "keymap", "command", "event", "config", "ui", "lsp", "project"}
 	for _, name := range moduleNames {
 		globalName := "_ks_" + name
 		val := L.GetGlobal(globalName)
