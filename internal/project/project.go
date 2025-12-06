@@ -181,6 +181,11 @@ type DefaultProject struct {
 	open   bool
 	config Config
 
+	// Goroutine lifecycle management
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
 	// Event handlers
 	fileChangeHandlers      []func(FileChangeEvent)
 	workspaceChangeHandlers []func(workspace.ChangeEvent)
@@ -281,6 +286,11 @@ func (p *DefaultProject) Open(ctx context.Context, roots ...string) error {
 		return workspace.ErrNoFolders
 	}
 
+	// Create internal context for goroutine lifecycle management
+	// This context is independent of the caller's context to allow goroutines
+	// to continue running until Close() is called
+	p.ctx, p.cancel = context.WithCancel(context.Background())
+
 	// Create workspace
 	var err error
 	if len(roots) == 1 {
@@ -289,6 +299,7 @@ func (p *DefaultProject) Open(ctx context.Context, roots ...string) error {
 		p.workspace, err = workspace.NewFromPaths(roots...)
 	}
 	if err != nil {
+		p.cancel() // Clean up context
 		return &WorkspaceError{Root: roots[0], Err: err}
 	}
 
@@ -340,7 +351,11 @@ func (p *DefaultProject) Open(ctx context.Context, roots ...string) error {
 		}
 
 		// Start processing watcher events
-		go p.processWatcherEvents(ctx)
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			p.processWatcherEvents(p.ctx)
+		}()
 	}
 
 	// Start background indexing
@@ -348,13 +363,17 @@ func (p *DefaultProject) Open(ctx context.Context, roots ...string) error {
 	for _, folder := range p.workspace.Folders() {
 		indexRoots = append(indexRoots, folder.Path)
 	}
-	if err := p.increIndex.Start(ctx, indexRoots...); err != nil {
+	if err := p.increIndex.Start(p.ctx, indexRoots...); err != nil {
 		// Log warning but continue
 	}
 
 	// Build initial graph if enabled
 	if p.config.EnableGraph && p.graph != nil {
-		go p.buildGraph(ctx, indexRoots)
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			p.buildGraph(p.ctx, indexRoots)
+		}()
 	}
 
 	p.open = true
@@ -364,13 +383,18 @@ func (p *DefaultProject) Open(ctx context.Context, roots ...string) error {
 // Close closes the workspace.
 func (p *DefaultProject) Close(ctx context.Context) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if !p.open {
+		p.mu.Unlock()
 		return ErrNotOpen
 	}
 
-	// Stop watcher
+	// Cancel context to signal goroutines to stop
+	if p.cancel != nil {
+		p.cancel()
+	}
+
+	// Stop watcher first (closes event channels which unblocks processWatcherEvents)
 	if p.watcher != nil {
 		p.watcher.Close()
 		p.watcher = nil
@@ -380,6 +404,28 @@ func (p *DefaultProject) Close(ctx context.Context) error {
 	if p.increIndex != nil {
 		p.increIndex.Stop()
 	}
+
+	// Release lock before waiting for goroutines (they may need to acquire lock)
+	p.mu.Unlock()
+
+	// Wait for goroutines to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		p.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Goroutines finished cleanly
+	case <-ctx.Done():
+		// Context cancelled while waiting - goroutines will still be signalled to stop
+		// via the cancelled p.ctx but we won't wait for them
+	}
+
+	// Reacquire lock for final cleanup
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// Close file store
 	if p.fileStore != nil {
@@ -397,6 +443,8 @@ func (p *DefaultProject) Close(ctx context.Context) error {
 	}
 
 	p.workspace = nil
+	p.ctx = nil
+	p.cancel = nil
 	p.open = false
 	return nil
 }
@@ -461,8 +509,14 @@ func (p *DefaultProject) OpenFile(ctx context.Context, path string) (*filestore.
 		p.mu.RUnlock()
 		return nil, ErrNotOpen
 	}
+	ws := p.workspace
 	store := p.fileStore
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return nil, NewPathError("open", path, ErrNotInWorkspace)
+	}
 
 	return store.Open(ctx, path)
 }
@@ -474,8 +528,14 @@ func (p *DefaultProject) SaveFile(ctx context.Context, path string) error {
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	store := p.fileStore
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return NewPathError("save", path, ErrNotInWorkspace)
+	}
 
 	return store.Save(ctx, path)
 }
@@ -487,8 +547,19 @@ func (p *DefaultProject) SaveFileAs(ctx context.Context, oldPath, newPath string
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	store := p.fileStore
 	p.mu.RUnlock()
+
+	// Validate both paths are in workspace
+	if ws != nil {
+		if !ws.IsInWorkspace(oldPath) {
+			return NewPathError("saveas", oldPath, ErrNotInWorkspace)
+		}
+		if !ws.IsInWorkspace(newPath) {
+			return NewPathError("saveas", newPath, ErrNotInWorkspace)
+		}
+	}
 
 	return store.SaveAs(ctx, oldPath, newPath)
 }
@@ -500,8 +571,14 @@ func (p *DefaultProject) CloseFile(ctx context.Context, path string) error {
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	store := p.fileStore
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return NewPathError("close", path, ErrNotInWorkspace)
+	}
 
 	return store.Close(ctx, path, false)
 }
@@ -513,8 +590,14 @@ func (p *DefaultProject) CreateFile(ctx context.Context, path string, content []
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	fs := p.vfs
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return NewPathError("create", path, ErrNotInWorkspace)
+	}
 
 	// Check if file exists
 	if fs.Exists(path) {
@@ -542,9 +625,15 @@ func (p *DefaultProject) DeleteFile(ctx context.Context, path string) error {
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	fs := p.vfs
 	store := p.fileStore
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return NewPathError("delete", path, ErrNotInWorkspace)
+	}
 
 	// Close if open
 	_ = store.Close(ctx, path, true)
@@ -564,9 +653,20 @@ func (p *DefaultProject) RenameFile(ctx context.Context, oldPath, newPath string
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	fs := p.vfs
 	store := p.fileStore
 	p.mu.RUnlock()
+
+	// Validate both paths are in workspace
+	if ws != nil {
+		if !ws.IsInWorkspace(oldPath) {
+			return NewPathError("rename", oldPath, ErrNotInWorkspace)
+		}
+		if !ws.IsInWorkspace(newPath) {
+			return NewPathError("rename", newPath, ErrNotInWorkspace)
+		}
+	}
 
 	// Close if open
 	_ = store.Close(ctx, oldPath, true)
@@ -586,8 +686,14 @@ func (p *DefaultProject) ReloadFile(ctx context.Context, path string) error {
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	store := p.fileStore
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return NewPathError("reload", path, ErrNotInWorkspace)
+	}
 
 	return store.Reload(ctx, path, false)
 }
@@ -599,8 +705,14 @@ func (p *DefaultProject) CreateDirectory(ctx context.Context, path string) error
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	fs := p.vfs
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return NewPathError("mkdir", path, ErrNotInWorkspace)
+	}
 
 	if err := fs.MkdirAll(path, 0755); err != nil {
 		return NewPathError("mkdir", path, err)
@@ -615,8 +727,14 @@ func (p *DefaultProject) DeleteDirectory(ctx context.Context, path string, recur
 		p.mu.RUnlock()
 		return ErrNotOpen
 	}
+	ws := p.workspace
 	fs := p.vfs
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return NewPathError("rmdir", path, ErrNotInWorkspace)
+	}
 
 	var err error
 	if recursive {
@@ -637,8 +755,14 @@ func (p *DefaultProject) ListDirectory(ctx context.Context, path string) ([]inde
 		p.mu.RUnlock()
 		return nil, ErrNotOpen
 	}
+	ws := p.workspace
 	fs := p.vfs
 	p.mu.RUnlock()
+
+	// Validate path is in workspace
+	if ws != nil && !ws.IsInWorkspace(path) {
+		return nil, NewPathError("readdir", path, ErrNotInWorkspace)
+	}
 
 	entries, err := fs.ReadDir(path)
 	if err != nil {
@@ -667,7 +791,13 @@ func (p *DefaultProject) FindFiles(ctx context.Context, query string, opts FindO
 		return nil, ErrNotOpen
 	}
 	searcher := p.fileSearcher
+	fileIdx := p.fileIndex
 	p.mu.RUnlock()
+
+	// Check if search components are available
+	if searcher == nil || fileIdx == nil {
+		return nil, nil
+	}
 
 	searchOpts := search.FileSearchOptions{
 		MaxResults:    opts.MaxResults,
@@ -686,7 +816,7 @@ func (p *DefaultProject) FindFiles(ctx context.Context, query string, opts FindO
 
 	matches := make([]FileMatch, len(results))
 	for i, r := range results {
-		info, _ := p.fileIndex.Get(r.Path)
+		info, _ := fileIdx.Get(r.Path)
 		matches[i] = FileMatch{
 			Path:  r.Path,
 			Name:  r.Name,
@@ -706,6 +836,11 @@ func (p *DefaultProject) SearchContent(ctx context.Context, query string, opts S
 	}
 	searcher := p.contentSearcher
 	p.mu.RUnlock()
+
+	// Check if content searcher is available
+	if searcher == nil {
+		return nil, nil
+	}
 
 	searchOpts := search.ContentSearchOptions{
 		CaseSensitive: opts.CaseSensitive,
@@ -964,27 +1099,29 @@ func (p *DefaultProject) handleWatchEvent(event watcher.Event) {
 		return
 	}
 
-	// Update incremental index
-	if p.increIndex != nil {
+	// Get incremental indexer and handlers under lock
+	p.mu.RLock()
+	increIndex := p.increIndex
+	handlers := make([]func(FileChangeEvent), len(p.fileChangeHandlers))
+	copy(handlers, p.fileChangeHandlers)
+	p.mu.RUnlock()
+
+	// Update incremental index (outside lock to avoid blocking)
+	if increIndex != nil {
 		indexEvent := index.FileChangeEvent{
 			Type:      index.FileChangeType(changeType),
 			Path:      event.Path,
 			Timestamp: event.Timestamp,
 		}
-		_ = p.increIndex.ProcessChange(indexEvent)
+		_ = increIndex.ProcessChange(indexEvent)
 	}
 
-	// Emit event to handlers
+	// Emit event to handlers (outside lock to avoid deadlock)
 	changeEvent := FileChangeEvent{
 		Type:      changeType,
 		Path:      event.Path,
 		Timestamp: event.Timestamp,
 	}
-
-	p.mu.RLock()
-	handlers := make([]func(FileChangeEvent), len(p.fileChangeHandlers))
-	copy(handlers, p.fileChangeHandlers)
-	p.mu.RUnlock()
 
 	for _, h := range handlers {
 		h(changeEvent)
@@ -993,26 +1130,41 @@ func (p *DefaultProject) handleWatchEvent(event watcher.Event) {
 
 // buildGraph builds the project graph in the background.
 func (p *DefaultProject) buildGraph(ctx context.Context, roots []string) {
-	if p.graph == nil {
+	p.mu.RLock()
+	g := p.graph
+	cfg := p.config
+	p.mu.RUnlock()
+
+	if g == nil {
 		return
 	}
 
-	builder := graph.NewBuilder(p.config.IndexWorkers)
-	builder.SetIgnorePatterns(p.config.ExcludePatterns)
+	builder := graph.NewBuilder(cfg.IndexWorkers)
+	builder.SetIgnorePatterns(cfg.ExcludePatterns)
 
 	for _, root := range roots {
-		g, err := builder.Build(ctx, root)
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		built, err := builder.Build(ctx, root)
 		if err != nil {
 			continue
 		}
 
 		// Merge nodes and edges into main graph
 		p.mu.Lock()
-		for _, node := range g.AllNodes() {
-			_ = p.graph.AddNode(node)
-		}
-		for _, edge := range g.AllEdges() {
-			_ = p.graph.AddEdge(edge)
+		// Re-check graph is still valid (could be cleared during Close)
+		if p.graph != nil {
+			for _, node := range built.AllNodes() {
+				_ = p.graph.AddNode(node)
+			}
+			for _, edge := range built.AllEdges() {
+				_ = p.graph.AddEdge(edge)
+			}
 		}
 		p.mu.Unlock()
 	}

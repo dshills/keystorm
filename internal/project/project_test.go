@@ -707,6 +707,113 @@ func BenchmarkProject_OpenFile(b *testing.B) {
 	}
 }
 
+// Test path validation - operations outside workspace should fail
+func TestProject_PathValidation(t *testing.T) {
+	memfs := vfs.NewMemFS()
+	_ = memfs.Mkdir("/workspace", 0755)
+	_ = memfs.WriteFile("/workspace/file.txt", []byte("hello"), 0644)
+	_ = memfs.Mkdir("/outside", 0755)
+	_ = memfs.WriteFile("/outside/file.txt", []byte("outside"), 0644)
+
+	cfg := DefaultConfig()
+	cfg.EnableContentIndex = false
+	cfg.EnableGraph = false
+
+	p := New(WithVFS(memfs), WithConfig(cfg))
+	ctx := context.Background()
+	_ = p.Open(ctx, "/workspace")
+	defer func() { _ = p.Close(ctx) }()
+
+	tests := []struct {
+		name string
+		fn   func() error
+	}{
+		{"OpenFile", func() error {
+			_, err := p.OpenFile(ctx, "/outside/file.txt")
+			return err
+		}},
+		{"SaveFile", func() error {
+			return p.SaveFile(ctx, "/outside/file.txt")
+		}},
+		{"CloseFile", func() error {
+			return p.CloseFile(ctx, "/outside/file.txt")
+		}},
+		{"ReloadFile", func() error {
+			return p.ReloadFile(ctx, "/outside/file.txt")
+		}},
+		{"CreateFile", func() error {
+			return p.CreateFile(ctx, "/outside/newfile.txt", []byte("content"))
+		}},
+		{"DeleteFile", func() error {
+			return p.DeleteFile(ctx, "/outside/file.txt")
+		}},
+		{"RenameFile_OldPath", func() error {
+			return p.RenameFile(ctx, "/outside/file.txt", "/workspace/renamed.txt")
+		}},
+		{"RenameFile_NewPath", func() error {
+			return p.RenameFile(ctx, "/workspace/file.txt", "/outside/renamed.txt")
+		}},
+		{"SaveFileAs_OldPath", func() error {
+			return p.SaveFileAs(ctx, "/outside/file.txt", "/workspace/copy.txt")
+		}},
+		{"SaveFileAs_NewPath", func() error {
+			return p.SaveFileAs(ctx, "/workspace/file.txt", "/outside/copy.txt")
+		}},
+		{"CreateDirectory", func() error {
+			return p.CreateDirectory(ctx, "/outside/newdir")
+		}},
+		{"DeleteDirectory", func() error {
+			return p.DeleteDirectory(ctx, "/outside", false)
+		}},
+		{"ListDirectory", func() error {
+			_, err := p.ListDirectory(ctx, "/outside")
+			return err
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fn()
+			if !IsNotInWorkspace(err) {
+				t.Errorf("%s: expected ErrNotInWorkspace, got %v", tt.name, err)
+			}
+		})
+	}
+}
+
+// Test that paths inside workspace work correctly
+func TestProject_PathValidation_Inside(t *testing.T) {
+	memfs := vfs.NewMemFS()
+	_ = memfs.Mkdir("/workspace", 0755)
+
+	cfg := DefaultConfig()
+	cfg.EnableContentIndex = false
+	cfg.EnableGraph = false
+
+	p := New(WithVFS(memfs), WithConfig(cfg))
+	ctx := context.Background()
+	_ = p.Open(ctx, "/workspace")
+	defer func() { _ = p.Close(ctx) }()
+
+	// Create file inside workspace should succeed
+	err := p.CreateFile(ctx, "/workspace/newfile.txt", []byte("content"))
+	if err != nil {
+		t.Errorf("CreateFile inside workspace: unexpected error %v", err)
+	}
+
+	// Create directory inside workspace should succeed
+	err = p.CreateDirectory(ctx, "/workspace/newdir")
+	if err != nil {
+		t.Errorf("CreateDirectory inside workspace: unexpected error %v", err)
+	}
+
+	// List directory inside workspace should succeed
+	_, err = p.ListDirectory(ctx, "/workspace")
+	if err != nil {
+		t.Errorf("ListDirectory inside workspace: unexpected error %v", err)
+	}
+}
+
 // Test helper to create a test graph
 func createTestGraph() graph.Graph {
 	g := graph.New()

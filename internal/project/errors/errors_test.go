@@ -1,7 +1,7 @@
 package errors
 
 import (
-	"errors"
+	stderrors "errors"
 	"testing"
 )
 
@@ -137,7 +137,7 @@ func TestErrorsAreDistinct(t *testing.T) {
 
 	for i, err1 := range allErrors {
 		for j, err2 := range allErrors {
-			if i != j && errors.Is(err1, err2) {
+			if i != j && stderrors.Is(err1, err2) {
 				t.Errorf("Error %d and %d should be distinct", i, j)
 			}
 		}
