@@ -64,3 +64,4 @@ Keystorm is designed as an "AI-native" editor with these key AI components (to b
 - Support both sync flows (inline completion) and async flows (multi-file refactors)
 - Audit trail for AI actions linked to git commits
 - Do not commit before mcp-pr review is run
+- Do not cimmit before mcp-pr review
