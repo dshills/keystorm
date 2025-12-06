@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dshills/keystorm/internal/project"
+	perrors "github.com/dshills/keystorm/internal/project/errors"
 	"github.com/dshills/keystorm/internal/project/vfs"
 )
 
@@ -62,7 +62,7 @@ func (s *FileStore) Open(ctx context.Context, path string) (*Document, error) {
 	// Clean the path
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return nil, &project.PathError{Op: "open", Path: path, Err: err}
+		return nil, &perrors.PathError{Op: "open", Path: path, Err: err}
 	}
 
 	// Check if already open
@@ -77,28 +77,28 @@ func (s *FileStore) Open(ctx context.Context, path string) (*Document, error) {
 	info, err := s.vfs.Stat(absPath)
 	if err != nil {
 		// Preserve the underlying VFS error for better debugging
-		return nil, &project.PathError{Op: "open", Path: path, Err: err}
+		return nil, &perrors.PathError{Op: "open", Path: path, Err: err}
 	}
 
 	// Check if it's a directory
 	if info.IsDir() {
-		return nil, &project.PathError{Op: "open", Path: path, Err: project.ErrIsDirectory}
+		return nil, &perrors.PathError{Op: "open", Path: path, Err: perrors.ErrIsDirectory}
 	}
 
 	// Check file size
 	if s.maxFileSize > 0 && info.Size() > s.maxFileSize {
-		return nil, &project.PathError{Op: "open", Path: path, Err: project.ErrFileTooLarge}
+		return nil, &perrors.PathError{Op: "open", Path: path, Err: perrors.ErrFileTooLarge}
 	}
 
 	// Read file content
 	content, err := s.vfs.ReadFile(absPath)
 	if err != nil {
-		return nil, &project.PathError{Op: "open", Path: path, Err: err}
+		return nil, &perrors.PathError{Op: "open", Path: path, Err: err}
 	}
 
 	// Check if binary
 	if vfs.IsBinary(content) {
-		return nil, &project.PathError{Op: "open", Path: path, Err: project.ErrBinaryFile}
+		return nil, &perrors.PathError{Op: "open", Path: path, Err: perrors.ErrBinaryFile}
 	}
 
 	// Create document
@@ -131,20 +131,20 @@ func (s *FileStore) Open(ctx context.Context, path string) (*Document, error) {
 func (s *FileStore) Close(ctx context.Context, path string, force bool) error {
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return &project.PathError{Op: "close", Path: path, Err: err}
+		return &perrors.PathError{Op: "close", Path: path, Err: err}
 	}
 
 	s.mu.Lock()
 	doc, ok := s.documents[absPath]
 	if !ok {
 		s.mu.Unlock()
-		return &project.PathError{Op: "close", Path: path, Err: project.ErrDocumentNotOpen}
+		return &perrors.PathError{Op: "close", Path: path, Err: perrors.ErrDocumentNotOpen}
 	}
 
 	// Check for unsaved changes
 	if !force && doc.IsDirty() {
 		s.mu.Unlock()
-		return &project.PathError{Op: "close", Path: path, Err: project.ErrDocumentDirty}
+		return &perrors.PathError{Op: "close", Path: path, Err: perrors.ErrDocumentDirty}
 	}
 
 	// Mark as closed and remove from store
@@ -230,7 +230,7 @@ func (s *FileStore) Count() int {
 func (s *FileStore) Save(ctx context.Context, path string) error {
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return &project.PathError{Op: "save", Path: path, Err: err}
+		return &perrors.PathError{Op: "save", Path: path, Err: err}
 	}
 
 	s.mu.RLock()
@@ -238,11 +238,11 @@ func (s *FileStore) Save(ctx context.Context, path string) error {
 	s.mu.RUnlock()
 
 	if !ok {
-		return &project.PathError{Op: "save", Path: path, Err: project.ErrDocumentNotOpen}
+		return &perrors.PathError{Op: "save", Path: path, Err: perrors.ErrDocumentNotOpen}
 	}
 
 	if doc.ReadOnly {
-		return &project.PathError{Op: "save", Path: path, Err: project.ErrReadOnly}
+		return &perrors.PathError{Op: "save", Path: path, Err: perrors.ErrReadOnly}
 	}
 
 	// Get content prepared for saving
@@ -250,7 +250,7 @@ func (s *FileStore) Save(ctx context.Context, path string) error {
 
 	// Write to disk
 	if err := s.vfs.WriteFile(absPath, content, 0644); err != nil {
-		return &project.PathError{Op: "save", Path: path, Err: err}
+		return &perrors.PathError{Op: "save", Path: path, Err: err}
 	}
 
 	// Get the new modification time
@@ -278,12 +278,12 @@ func (s *FileStore) Save(ctx context.Context, path string) error {
 func (s *FileStore) SaveAs(ctx context.Context, oldPath, newPath string) error {
 	oldAbsPath, err := s.vfs.Abs(oldPath)
 	if err != nil {
-		return &project.PathError{Op: "saveas", Path: oldPath, Err: err}
+		return &perrors.PathError{Op: "saveas", Path: oldPath, Err: err}
 	}
 
 	newAbsPath, err := s.vfs.Abs(newPath)
 	if err != nil {
-		return &project.PathError{Op: "saveas", Path: newPath, Err: err}
+		return &perrors.PathError{Op: "saveas", Path: newPath, Err: err}
 	}
 
 	// Snapshot state while holding lock, then release before I/O
@@ -291,13 +291,13 @@ func (s *FileStore) SaveAs(ctx context.Context, oldPath, newPath string) error {
 	doc, ok := s.documents[oldAbsPath]
 	if !ok {
 		s.mu.Unlock()
-		return &project.PathError{Op: "saveas", Path: oldPath, Err: project.ErrDocumentNotOpen}
+		return &perrors.PathError{Op: "saveas", Path: oldPath, Err: perrors.ErrDocumentNotOpen}
 	}
 
 	// Check if new path already has an open document
 	if _, exists := s.documents[newAbsPath]; exists {
 		s.mu.Unlock()
-		return &project.PathError{Op: "saveas", Path: newPath, Err: project.ErrAlreadyOpen}
+		return &perrors.PathError{Op: "saveas", Path: newPath, Err: perrors.ErrAlreadyOpen}
 	}
 	s.mu.Unlock()
 
@@ -306,7 +306,7 @@ func (s *FileStore) SaveAs(ctx context.Context, oldPath, newPath string) error {
 
 	// Write to new path (I/O outside lock)
 	if err := s.vfs.WriteFile(newAbsPath, content, 0644); err != nil {
-		return &project.PathError{Op: "saveas", Path: newPath, Err: err}
+		return &perrors.PathError{Op: "saveas", Path: newPath, Err: err}
 	}
 
 	// Get the new modification time
@@ -323,13 +323,13 @@ func (s *FileStore) SaveAs(ctx context.Context, oldPath, newPath string) error {
 		s.mu.Unlock()
 		// Document was closed while we were writing - clean up orphaned file
 		_ = s.vfs.Remove(newAbsPath)
-		return &project.PathError{Op: "saveas", Path: oldPath, Err: project.ErrDocumentNotOpen}
+		return &perrors.PathError{Op: "saveas", Path: oldPath, Err: perrors.ErrDocumentNotOpen}
 	}
 	if _, exists := s.documents[newAbsPath]; exists {
 		s.mu.Unlock()
 		// Another document appeared at new path - clean up
 		_ = s.vfs.Remove(newAbsPath)
-		return &project.PathError{Op: "saveas", Path: newPath, Err: project.ErrAlreadyOpen}
+		return &perrors.PathError{Op: "saveas", Path: newPath, Err: perrors.ErrAlreadyOpen}
 	}
 
 	// Update document path and state
@@ -361,7 +361,7 @@ func (s *FileStore) SaveAs(ctx context.Context, oldPath, newPath string) error {
 func (s *FileStore) Reload(ctx context.Context, path string, force bool) error {
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return &project.PathError{Op: "reload", Path: path, Err: err}
+		return &perrors.PathError{Op: "reload", Path: path, Err: err}
 	}
 
 	s.mu.RLock()
@@ -369,22 +369,22 @@ func (s *FileStore) Reload(ctx context.Context, path string, force bool) error {
 	s.mu.RUnlock()
 
 	if !ok {
-		return &project.PathError{Op: "reload", Path: path, Err: project.ErrDocumentNotOpen}
+		return &perrors.PathError{Op: "reload", Path: path, Err: perrors.ErrDocumentNotOpen}
 	}
 
 	if !force && doc.IsDirty() {
-		return &project.PathError{Op: "reload", Path: path, Err: project.ErrDocumentDirty}
+		return &perrors.PathError{Op: "reload", Path: path, Err: perrors.ErrDocumentDirty}
 	}
 
 	// Read current content from disk
 	content, err := s.vfs.ReadFile(absPath)
 	if err != nil {
-		return &project.PathError{Op: "reload", Path: path, Err: err}
+		return &perrors.PathError{Op: "reload", Path: path, Err: err}
 	}
 
 	info, err := s.vfs.Stat(absPath)
 	if err != nil {
-		return &project.PathError{Op: "reload", Path: path, Err: err}
+		return &perrors.PathError{Op: "reload", Path: path, Err: err}
 	}
 
 	// Reload the document
@@ -407,7 +407,7 @@ func (s *FileStore) Reload(ctx context.Context, path string, force bool) error {
 func (s *FileStore) UpdateContent(path string, content []byte) error {
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return &project.PathError{Op: "update", Path: path, Err: err}
+		return &perrors.PathError{Op: "update", Path: path, Err: err}
 	}
 
 	s.mu.RLock()
@@ -415,7 +415,7 @@ func (s *FileStore) UpdateContent(path string, content []byte) error {
 	s.mu.RUnlock()
 
 	if !ok {
-		return &project.PathError{Op: "update", Path: path, Err: project.ErrDocumentNotOpen}
+		return &perrors.PathError{Op: "update", Path: path, Err: perrors.ErrDocumentNotOpen}
 	}
 
 	wasDirty := doc.IsDirty()
@@ -440,7 +440,7 @@ func (s *FileStore) UpdateContent(path string, content []byte) error {
 func (s *FileStore) ApplyEdit(path string, startOffset, endOffset int, newText []byte) error {
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return &project.PathError{Op: "edit", Path: path, Err: err}
+		return &perrors.PathError{Op: "edit", Path: path, Err: err}
 	}
 
 	s.mu.RLock()
@@ -448,12 +448,12 @@ func (s *FileStore) ApplyEdit(path string, startOffset, endOffset int, newText [
 	s.mu.RUnlock()
 
 	if !ok {
-		return &project.PathError{Op: "edit", Path: path, Err: project.ErrDocumentNotOpen}
+		return &perrors.PathError{Op: "edit", Path: path, Err: perrors.ErrDocumentNotOpen}
 	}
 
 	wasDirty := doc.IsDirty()
 	if err := doc.ApplyEdit(startOffset, endOffset, newText); err != nil {
-		return &project.PathError{Op: "edit", Path: path, Err: err}
+		return &perrors.PathError{Op: "edit", Path: path, Err: err}
 	}
 	isDirty := doc.IsDirty()
 
@@ -501,7 +501,7 @@ func (s *FileStore) CloseAll(ctx context.Context, force bool) error {
 	if !force {
 		for _, doc := range s.documents {
 			if doc.IsDirty() {
-				return project.ErrDocumentDirty
+				return perrors.ErrDocumentDirty
 			}
 		}
 	}
@@ -528,23 +528,23 @@ func (s *FileStore) CloseAll(ctx context.Context, force bool) error {
 func (s *FileStore) CreateFile(ctx context.Context, path string, content []byte) (*Document, error) {
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return nil, &project.PathError{Op: "create", Path: path, Err: err}
+		return nil, &perrors.PathError{Op: "create", Path: path, Err: err}
 	}
 
 	// Check if file already exists
 	if s.vfs.Exists(absPath) {
-		return nil, &project.PathError{Op: "create", Path: path, Err: project.ErrAlreadyExists}
+		return nil, &perrors.PathError{Op: "create", Path: path, Err: perrors.ErrAlreadyExists}
 	}
 
 	// Check if parent directory exists
 	parent := s.vfs.Dir(absPath)
 	if !s.vfs.IsDir(parent) {
-		return nil, &project.PathError{Op: "create", Path: path, Err: project.ErrNotFound}
+		return nil, &perrors.PathError{Op: "create", Path: path, Err: perrors.ErrNotFound}
 	}
 
 	// Create the file
 	if err := s.vfs.WriteFile(absPath, content, 0644); err != nil {
-		return nil, &project.PathError{Op: "create", Path: path, Err: err}
+		return nil, &perrors.PathError{Op: "create", Path: path, Err: err}
 	}
 
 	// Open it
@@ -556,7 +556,7 @@ func (s *FileStore) CreateFile(ctx context.Context, path string, content []byte)
 func (s *FileStore) DeleteFile(ctx context.Context, path string, force bool) error {
 	absPath, err := s.vfs.Abs(path)
 	if err != nil {
-		return &project.PathError{Op: "delete", Path: path, Err: err}
+		return &perrors.PathError{Op: "delete", Path: path, Err: err}
 	}
 
 	// Check if file is open
@@ -565,7 +565,7 @@ func (s *FileStore) DeleteFile(ctx context.Context, path string, force bool) err
 	if isOpen {
 		if !force && doc.IsDirty() {
 			s.mu.Unlock()
-			return &project.PathError{Op: "delete", Path: path, Err: project.ErrDocumentDirty}
+			return &perrors.PathError{Op: "delete", Path: path, Err: perrors.ErrDocumentDirty}
 		}
 		// Close the document
 		doc.MarkClosed()
@@ -575,7 +575,7 @@ func (s *FileStore) DeleteFile(ctx context.Context, path string, force bool) err
 
 	// Delete from disk
 	if err := s.vfs.Remove(absPath); err != nil {
-		return &project.PathError{Op: "delete", Path: path, Err: err}
+		return &perrors.PathError{Op: "delete", Path: path, Err: err}
 	}
 
 	// Notify close handlers if was open (copy slice to avoid races)
@@ -596,17 +596,17 @@ func (s *FileStore) DeleteFile(ctx context.Context, path string, force bool) err
 func (s *FileStore) RenameFile(ctx context.Context, oldPath, newPath string) error {
 	oldAbsPath, err := s.vfs.Abs(oldPath)
 	if err != nil {
-		return &project.PathError{Op: "rename", Path: oldPath, Err: err}
+		return &perrors.PathError{Op: "rename", Path: oldPath, Err: err}
 	}
 
 	newAbsPath, err := s.vfs.Abs(newPath)
 	if err != nil {
-		return &project.PathError{Op: "rename", Path: newPath, Err: err}
+		return &perrors.PathError{Op: "rename", Path: newPath, Err: err}
 	}
 
 	// Check if new path already exists
 	if s.vfs.Exists(newAbsPath) {
-		return &project.PathError{Op: "rename", Path: newPath, Err: project.ErrAlreadyExists}
+		return &perrors.PathError{Op: "rename", Path: newPath, Err: perrors.ErrAlreadyExists}
 	}
 
 	s.mu.Lock()
@@ -615,13 +615,13 @@ func (s *FileStore) RenameFile(ctx context.Context, oldPath, newPath string) err
 	// Check if new path has an open document
 	if _, exists := s.documents[newAbsPath]; exists {
 		s.mu.Unlock()
-		return &project.PathError{Op: "rename", Path: newPath, Err: project.ErrAlreadyOpen}
+		return &perrors.PathError{Op: "rename", Path: newPath, Err: perrors.ErrAlreadyOpen}
 	}
 
 	// Rename on disk
 	if err := s.vfs.Rename(oldAbsPath, newAbsPath); err != nil {
 		s.mu.Unlock()
-		return &project.PathError{Op: "rename", Path: oldPath, Err: err}
+		return &perrors.PathError{Op: "rename", Path: oldPath, Err: err}
 	}
 
 	// Update document if open

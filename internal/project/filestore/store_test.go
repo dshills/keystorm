@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dshills/keystorm/internal/project"
+	perrors "github.com/dshills/keystorm/internal/project/errors"
 	"github.com/dshills/keystorm/internal/project/vfs"
 )
 
@@ -71,7 +71,7 @@ func TestFileStore_Open_NotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent file")
 	}
 
-	var pathErr *project.PathError
+	var pathErr *perrors.PathError
 	if !isPathError(err, &pathErr) {
 		t.Errorf("expected PathError, got %T", err)
 	}
@@ -651,8 +651,8 @@ func TestFileStore_ConcurrentAccess(t *testing.T) {
 }
 
 // Helper to check PathError
-func isPathError(err error, target **project.PathError) bool {
-	if pe, ok := err.(*project.PathError); ok {
+func isPathError(err error, target **perrors.PathError) bool {
+	if pe, ok := err.(*perrors.PathError); ok {
 		*target = pe
 		return true
 	}
