@@ -5,6 +5,7 @@ go 1.25.4
 require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gdamore/tcell/v2 v2.13.1
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/yuin/gopher-lua v1.1.1
 )
 
