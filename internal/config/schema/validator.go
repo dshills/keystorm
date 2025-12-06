@@ -1,8 +1,10 @@
 package schema
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
+	"net/mail"
 	"regexp"
 	"strings"
 	"sync"
@@ -303,7 +305,14 @@ func (v *Validator) validateArray(path string, value any, schema *Schema, errs *
 	if schema.UniqueItems {
 		seen := make(map[string]bool)
 		for i, item := range arr {
-			key := fmt.Sprintf("%v", item)
+			// Use JSON marshaling for reliable key generation
+			keyBytes, err := json.Marshal(item)
+			var key string
+			if err != nil {
+				key = fmt.Sprintf("%v", item)
+			} else {
+				key = string(keyBytes)
+			}
 			if seen[key] {
 				errs.Add(path, fmt.Sprintf("array items must be unique, duplicate at index %d", i))
 				break
@@ -371,7 +380,7 @@ func (v *Validator) validateFormat(path, value, format string, errs *ValidationE
 			errs.Add(path, fmt.Sprintf("invalid URI format: %s", value))
 		}
 	case "email":
-		if !strings.Contains(value, "@") || !strings.Contains(value, ".") {
+		if _, err := mail.ParseAddress(value); err != nil {
 			errs.Add(path, fmt.Sprintf("invalid email format: %s", value))
 		}
 	case "regex":
@@ -484,6 +493,37 @@ func toFloat64(v any) float64 {
 	}
 }
 
+func toInt64(v any) int64 {
+	switch val := v.(type) {
+	case int:
+		return int64(val)
+	case int8:
+		return int64(val)
+	case int16:
+		return int64(val)
+	case int32:
+		return int64(val)
+	case int64:
+		return val
+	case uint:
+		return int64(val)
+	case uint8:
+		return int64(val)
+	case uint16:
+		return int64(val)
+	case uint32:
+		return int64(val)
+	case uint64:
+		return int64(val)
+	case float32:
+		return int64(val)
+	case float64:
+		return int64(val)
+	default:
+		return 0
+	}
+}
+
 func toSlice(v any) []any {
 	switch val := v.(type) {
 	case []any:
@@ -525,12 +565,28 @@ func valuesEqual(a, b any) bool {
 		return false
 	}
 
-	// Handle numeric comparison
+	// Handle numeric comparison with precision preservation
 	if isNumber(a) && isNumber(b) {
+		// If both are integers, compare as int64 to preserve precision
+		// But check for uint64 overflow first
+		if isInteger(a) && isInteger(b) {
+			// Check for uint64 values that would overflow int64
+			if isLargeUint64(a) || isLargeUint64(b) {
+				return toFloat64(a) == toFloat64(b)
+			}
+			return toInt64(a) == toInt64(b)
+		}
 		return toFloat64(a) == toFloat64(b)
 	}
 
 	return a == b
+}
+
+func isLargeUint64(v any) bool {
+	if val, ok := v.(uint64); ok {
+		return val > 9223372036854775807 // math.MaxInt64
+	}
+	return false
 }
 
 func joinPath(base, name string) string {

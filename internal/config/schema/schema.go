@@ -100,11 +100,6 @@ type Schema struct {
 	// Not inverts a schema.
 	Not *Schema `json:"not,omitempty"`
 
-	// If/Then/Else for conditional validation.
-	If   *Schema `json:"if,omitempty"`
-	Then *Schema `json:"then,omitempty"`
-	Else *Schema `json:"else,omitempty"`
-
 	// Ref references another schema ($ref).
 	Ref string `json:"$ref,omitempty"`
 

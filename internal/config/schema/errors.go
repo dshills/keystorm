@@ -18,9 +18,6 @@ type ValidationError struct {
 
 	// Expected describes what was expected.
 	Expected string
-
-	// SchemaPath is the path in the schema that failed.
-	SchemaPath string
 }
 
 // Error implements the error interface.
@@ -92,9 +89,9 @@ func (e *ValidationErrors) Len() int {
 	return len(e.Errors)
 }
 
-// Clear removes all errors.
+// Clear removes all errors and releases memory.
 func (e *ValidationErrors) Clear() {
-	e.Errors = e.Errors[:0]
+	e.Errors = nil
 }
 
 // AsError returns nil if no errors, otherwise returns self.
