@@ -171,15 +171,35 @@ func (r *Repository) resolveRef(refName string) (string, error) {
 
 // git executes a git command in the repository.
 func (r *Repository) git(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = r.path
+	cmd := newGitCommand(r.path, args...)
+	return cmd.run()
+}
+
+// gitCommand represents a git command to execute outside a repository context.
+// This is used by Clone and other operations that don't require an existing repo.
+type gitCommand struct {
+	dir  string
+	args []string
+}
+
+// newGitCommand creates a new git command.
+func newGitCommand(dir string, args ...string) *gitCommand {
+	return &gitCommand{dir: dir, args: args}
+}
+
+// run executes the git command.
+func (c *gitCommand) run() (string, error) {
+	cmd := exec.Command("git", c.args...)
+	if c.dir != "" {
+		cmd.Dir = c.dir
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("git %s: %s", strings.Join(c.args, " "), strings.TrimSpace(stderr.String()))
 	}
 
 	return stdout.String(), nil

@@ -42,4 +42,13 @@ var (
 
 	// ErrManagerClosed indicates the manager has been closed.
 	ErrManagerClosed = errors.New("manager closed")
+
+	// ErrPushRejected indicates the push was rejected.
+	ErrPushRejected = errors.New("push rejected")
+
+	// ErrNoUpstream indicates no upstream branch is configured.
+	ErrNoUpstream = errors.New("no upstream branch configured")
+
+	// ErrStashEmpty indicates no stash entries exist.
+	ErrStashEmpty = errors.New("no stash entries")
 )
