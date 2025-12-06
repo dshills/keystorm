@@ -37,6 +37,10 @@ type Config struct {
 	// Options
 	enableWatcher bool
 	enableSchema  bool
+
+	// configErrors stores errors encountered during configuration access.
+	// This allows detection of type mismatches and other config problems.
+	configErrors map[string]error
 }
 
 // Option configures a Config instance.

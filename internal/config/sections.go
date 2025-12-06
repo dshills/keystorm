@@ -260,11 +260,18 @@ func (c *Config) Logging() LoggingConfig {
 	}
 }
 
-// Helper methods for getting values with defaults
+// Helper methods for getting values with defaults.
+// These methods only return the default for ErrSettingNotFound.
+// Type errors are logged and return the default to avoid breaking callers,
+// but indicate a configuration problem that should be fixed.
 
 func (c *Config) getStringOr(path string, defaultValue string) string {
 	v, err := c.GetString(path)
 	if err != nil {
+		if err != ErrSettingNotFound {
+			// Record type/parse errors - these indicate config problems
+			c.recordConfigError(path, err)
+		}
 		return defaultValue
 	}
 	return v
@@ -273,6 +280,9 @@ func (c *Config) getStringOr(path string, defaultValue string) string {
 func (c *Config) getIntOr(path string, defaultValue int) int {
 	v, err := c.GetInt(path)
 	if err != nil {
+		if err != ErrSettingNotFound {
+			c.recordConfigError(path, err)
+		}
 		return defaultValue
 	}
 	return v
@@ -281,6 +291,9 @@ func (c *Config) getIntOr(path string, defaultValue int) int {
 func (c *Config) getBoolOr(path string, defaultValue bool) bool {
 	v, err := c.GetBool(path)
 	if err != nil {
+		if err != ErrSettingNotFound {
+			c.recordConfigError(path, err)
+		}
 		return defaultValue
 	}
 	return v
@@ -289,6 +302,9 @@ func (c *Config) getBoolOr(path string, defaultValue bool) bool {
 func (c *Config) getFloatOr(path string, defaultValue float64) float64 {
 	v, err := c.GetFloat(path)
 	if err != nil {
+		if err != ErrSettingNotFound {
+			c.recordConfigError(path, err)
+		}
 		return defaultValue
 	}
 	return v
@@ -297,10 +313,55 @@ func (c *Config) getFloatOr(path string, defaultValue float64) float64 {
 func (c *Config) getStringSliceOr(path string, defaultValue []string) []string {
 	v, err := c.GetStringSlice(path)
 	if err != nil {
+		if err != ErrSettingNotFound {
+			c.recordConfigError(path, err)
+		}
 		// Return a copy of the default to prevent mutation
 		result := make([]string, len(defaultValue))
 		copy(result, defaultValue)
 		return result
 	}
-	return v
+	// Return a copy of the result to enforce snapshot guarantee
+	result := make([]string, len(v))
+	copy(result, v)
+	return result
+}
+
+// recordConfigError stores configuration errors for later retrieval.
+// Only the first error for each path is recorded to preserve the original cause.
+// This helps identify misconfiguration without breaking callers.
+func (c *Config) recordConfigError(path string, err error) {
+	// Store errors for later retrieval via ConfigErrors()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.configErrors == nil {
+		c.configErrors = make(map[string]error)
+	}
+	// Only store the first error for each path to preserve original cause
+	if _, exists := c.configErrors[path]; !exists {
+		c.configErrors[path] = err
+	}
+}
+
+// ConfigErrors returns any configuration errors encountered during access.
+// This allows callers to check for misconfigurations after loading.
+func (c *Config) ConfigErrors() map[string]error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.configErrors == nil {
+		return nil
+	}
+	// Return a copy to prevent mutation
+	result := make(map[string]error, len(c.configErrors))
+	for k, v := range c.configErrors {
+		result[k] = v
+	}
+	return result
+}
+
+// ClearConfigErrors clears any stored configuration errors.
+func (c *Config) ClearConfigErrors() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.configErrors = nil
 }

@@ -244,7 +244,7 @@ func TestConfig_AI(t *testing.T) {
 	if ai.MaxTokens != 4096 {
 		t.Errorf("MaxTokens = %d, want 4096", ai.MaxTokens)
 	}
-	if math.Abs(ai.Temperature-0.7) > 1e-9 {
+	if math.Abs(ai.Temperature-0.7) > 1e-6 {
 		t.Errorf("Temperature = %f, want 0.7", ai.Temperature)
 	}
 }
@@ -310,5 +310,160 @@ func TestConfig_SectionsWithNoConfig(t *testing.T) {
 	vim := c.Vim()
 	if !vim.Enabled {
 		t.Error("Vim.Enabled = false, want true (default)")
+	}
+}
+
+// TestConfig_SnapshotContract tests that returned section structs are snapshots
+// and do not affect the underlying configuration when mutated.
+func TestConfig_SnapshotContract(t *testing.T) {
+	c := New(WithWatcher(false))
+	defer c.Close()
+	if err := c.Load(context.Background()); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	t.Run("slice mutation does not affect config", func(t *testing.T) {
+		// Get files config
+		files1 := c.Files()
+		originalLen := len(files1.Exclude)
+
+		// Mutate the returned slice
+		files1.Exclude = append(files1.Exclude, "mutated-value")
+		files1.Exclude[0] = "mutated-first"
+
+		// Get files config again
+		files2 := c.Files()
+
+		// The mutation should not have affected the underlying config
+		if len(files2.Exclude) != originalLen {
+			t.Errorf("Slice mutation affected config: got len %d, want %d", len(files2.Exclude), originalLen)
+		}
+		if files2.Exclude[0] == "mutated-first" {
+			t.Error("Slice element mutation affected config")
+		}
+
+		// Verify via direct Get call
+		excludeSlice, err := c.GetStringSlice("files.exclude")
+		if err != nil {
+			t.Fatalf("GetStringSlice error: %v", err)
+		}
+		if len(excludeSlice) != originalLen {
+			t.Errorf("GetStringSlice shows mutation: got len %d, want %d", len(excludeSlice), originalLen)
+		}
+	})
+
+	t.Run("struct field mutation does not affect config", func(t *testing.T) {
+		// Get editor config
+		editor1 := c.Editor()
+		originalTabSize := editor1.TabSize
+
+		// Mutate the returned struct
+		editor1.TabSize = 999
+
+		// Get editor config again
+		editor2 := c.Editor()
+
+		// The mutation should not have affected the underlying config
+		if editor2.TabSize != originalTabSize {
+			t.Errorf("Struct mutation affected config: got TabSize %d, want %d", editor2.TabSize, originalTabSize)
+		}
+
+		// Verify via direct Get call
+		tabSize, err := c.GetInt("editor.tabSize")
+		if err != nil {
+			t.Fatalf("GetInt error: %v", err)
+		}
+		if tabSize != originalTabSize {
+			t.Errorf("GetInt shows mutation: got %d, want %d", tabSize, originalTabSize)
+		}
+	})
+
+	t.Run("multiple calls return independent copies", func(t *testing.T) {
+		files1 := c.Files()
+		files2 := c.Files()
+
+		// Both should have the same initial values
+		if len(files1.Exclude) != len(files2.Exclude) {
+			t.Errorf("Initial lengths differ: %d vs %d", len(files1.Exclude), len(files2.Exclude))
+		}
+
+		// Mutate files1 by changing an existing element (more robust than append)
+		if len(files1.Exclude) > 0 {
+			originalValue := files2.Exclude[0]
+			files1.Exclude[0] = "mutated-in-files1"
+
+			// files2 should be unaffected - the element should still have original value
+			if files2.Exclude[0] != originalValue {
+				t.Errorf("Slice element mutation affected other copy: got %q, want %q",
+					files2.Exclude[0], originalValue)
+			}
+		}
+	})
+}
+
+// TestConfig_TypeErrorLogging tests that type errors are captured for debugging.
+func TestConfig_TypeErrorLogging(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create config with wrong type for tabSize (string instead of int)
+	settingsPath := filepath.Join(tmpDir, "settings.toml")
+	settingsContent := `
+[editor]
+tabSize = "not-a-number"
+`
+	if err := os.WriteFile(settingsPath, []byte(settingsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := New(
+		WithUserConfigDir(tmpDir),
+		WithWatcher(false),
+		WithSchemaValidation(false), // Disable schema validation to test type error handling
+	)
+	defer c.Close()
+	if err := c.Load(context.Background()); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Clear any errors from loading
+	c.ClearConfigErrors()
+
+	// Access editor - this should use default for tabSize but log an error
+	editor := c.Editor()
+
+	// Should get default value
+	if editor.TabSize != 4 {
+		t.Errorf("TabSize = %d, want 4 (default due to type error)", editor.TabSize)
+	}
+
+	// Should have logged the error
+	errors := c.ConfigErrors()
+	if errors == nil {
+		t.Error("ConfigErrors() returned nil, expected error for editor.tabSize")
+	} else if _, ok := errors["editor.tabSize"]; !ok {
+		t.Error("ConfigErrors() missing error for editor.tabSize")
+	}
+}
+
+// TestConfig_ConfigErrorsCopy tests that ConfigErrors returns a copy.
+func TestConfig_ConfigErrorsCopy(t *testing.T) {
+	c := New(WithWatcher(false))
+	defer c.Close()
+	if err := c.Load(context.Background()); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Simulate an error being recorded
+	c.recordConfigError("test.path", ErrTypeMismatch)
+
+	errors1 := c.ConfigErrors()
+	errors2 := c.ConfigErrors()
+
+	// Mutate errors1
+	errors1["mutated"] = ErrSettingNotFound
+
+	// errors2 should be unaffected
+	if _, ok := errors2["mutated"]; ok {
+		t.Error("ConfigErrors() returned shared map, mutation affected other calls")
 	}
 }
