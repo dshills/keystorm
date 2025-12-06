@@ -220,11 +220,17 @@ func (ii *IncrementalIndexer) Start(ctx context.Context, roots ...string) error 
 		return ErrIndexerBusy
 	}
 
-	// Reset progress
-	ii.progress = IndexProgress{
-		StartTime:      time.Now(),
-		LastUpdateTime: time.Now(),
-	}
+	// Reset progress with proper synchronization
+	now := time.Now()
+	ii.progress.mu.Lock()
+	ii.progress.TotalFiles = 0
+	ii.progress.IndexedFiles = 0
+	ii.progress.ErrorFiles = 0
+	ii.progress.BytesProcessed = 0
+	ii.progress.StartTime = now
+	ii.progress.LastUpdateTime = now
+	ii.progress.CurrentFile = ""
+	ii.progress.mu.Unlock()
 
 	// Emit start event
 	ii.emitEvent(IndexEvent{
@@ -418,22 +424,21 @@ func (ii *IncrementalIndexer) shouldExclude(path string) bool {
 }
 
 // ProcessChange handles a file change event.
+// Note: This method does not hold locks during IO operations to avoid blocking.
 func (ii *IncrementalIndexer) ProcessChange(event FileChangeEvent) error {
-	ii.mu.Lock()
-	defer ii.mu.Unlock()
-
 	switch event.Type {
 	case FileChangeCreated, FileChangeModified:
-		// Re-index the file
+		// Stat file without holding lock
 		info, err := os.Stat(event.Path)
 		if err != nil {
 			return err
 		}
 
+		// indexFile handles its own synchronization via the underlying indexes
 		return ii.indexFile(event.Path, info)
 
 	case FileChangeDeleted:
-		// Remove from indexes
+		// Remove from indexes - each index handles its own locking
 		if err := ii.fileIndex.Remove(event.Path); err != nil && err != ErrNotFound {
 			return err
 		}
@@ -445,7 +450,7 @@ func (ii *IncrementalIndexer) ProcessChange(event FileChangeEvent) error {
 		}
 
 	case FileChangeRenamed:
-		// Remove old path
+		// Remove old path - each index handles its own locking
 		if err := ii.fileIndex.Remove(event.OldPath); err != nil && err != ErrNotFound {
 			return err
 		}
@@ -453,12 +458,13 @@ func (ii *IncrementalIndexer) ProcessChange(event FileChangeEvent) error {
 			_ = ii.contentIndex.RemoveDocument(event.OldPath)
 		}
 
-		// Index new path
+		// Stat new file without holding lock
 		info, err := os.Stat(event.Path)
 		if err != nil {
 			return err
 		}
 
+		// indexFile handles its own synchronization
 		return ii.indexFile(event.Path, info)
 	}
 
@@ -466,7 +472,30 @@ func (ii *IncrementalIndexer) ProcessChange(event FileChangeEvent) error {
 }
 
 // Rebuild forces a full reindex.
+// It stops any running indexing first to ensure consistent state.
 func (ii *IncrementalIndexer) Rebuild(ctx context.Context, roots ...string) error {
+	// Stop any running indexing first
+	currentStatus := IndexStatus(ii.status.Load())
+	if currentStatus == IndexStatusIndexing {
+		// Cancel current indexing and wait for workers to finish
+		ii.cancel()
+		ii.wg.Wait()
+
+		// Create new context for the rebuild
+		ii.ctx, ii.cancel = context.WithCancel(context.Background())
+
+		// Reset status to idle so Start can proceed
+		ii.status.Store(int32(IndexStatusIdle))
+
+		// Recreate the jobs channel since the old one was closed
+		ii.jobs = make(chan indexJob, ii.workers*10)
+	} else if currentStatus == IndexStatusStopped {
+		// Reactivate stopped indexer
+		ii.ctx, ii.cancel = context.WithCancel(context.Background())
+		ii.status.Store(int32(IndexStatusIdle))
+		ii.jobs = make(chan indexJob, ii.workers*10)
+	}
+
 	// Clear existing indexes
 	ii.fileIndex.Clear()
 	if ii.contentIndex != nil {

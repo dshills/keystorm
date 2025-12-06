@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -72,19 +73,12 @@ func NewContentIndex(config ContentIndexConfig) *ContentIndex {
 
 // IndexDocument indexes a document's content.
 func (ci *ContentIndex) IndexDocument(path string, content []byte) error {
-	ci.mu.Lock()
-	defer ci.mu.Unlock()
-
-	// Remove existing index for this document
-	ci.removeDocumentLocked(path)
-
-	// Parse content into lines
+	// Build term index outside the lock for better concurrency
 	lines := splitIntoLines(content)
-
-	// Count words
 	wordCount := 0
 
-	// Index each line
+	// Build local term -> line numbers mapping
+	localTerms := make(map[string][]int)
 	for lineNum, line := range lines {
 		terms := ci.tokenize(line)
 		wordCount += len(terms)
@@ -92,21 +86,36 @@ func (ci *ContentIndex) IndexDocument(path string, content []byte) error {
 		for _, term := range terms {
 			if ci.shouldIndexTerm(term) {
 				normalizedTerm := ci.normalizeTerm(term)
-				if ci.termIndex[normalizedTerm] == nil {
-					ci.termIndex[normalizedTerm] = make(map[string][]int)
-				}
-				ci.termIndex[normalizedTerm][path] = append(ci.termIndex[normalizedTerm][path], lineNum+1) // 1-based
+				localTerms[normalizedTerm] = append(localTerms[normalizedTerm], lineNum+1) // 1-based
 			}
 		}
 	}
 
-	// Store document metadata
-	ci.documents[path] = &DocumentMeta{
+	// Build document metadata
+	docMeta := &DocumentMeta{
 		Path:      path,
 		Size:      int64(len(content)),
 		LineCount: len(lines),
 		WordCount: wordCount,
 	}
+
+	// Now acquire lock and merge into global index
+	ci.mu.Lock()
+	defer ci.mu.Unlock()
+
+	// Remove existing index for this document
+	ci.removeDocumentLocked(path)
+
+	// Merge local terms into global index
+	for term, lineNums := range localTerms {
+		if ci.termIndex[term] == nil {
+			ci.termIndex[term] = make(map[string][]int)
+		}
+		ci.termIndex[term][path] = lineNums
+	}
+
+	// Store document metadata
+	ci.documents[path] = docMeta
 
 	return nil
 }
@@ -189,6 +198,7 @@ func (ci *ContentIndex) Search(ctx context.Context, query string, opts ContentSe
 		for line := range lineNumbers {
 			lines = append(lines, line)
 		}
+		sort.Ints(lines)
 
 		doc := ci.documents[path]
 		results = append(results, ContentSearchResult{
