@@ -33,50 +33,143 @@
 //   - watcher: File watching for live reload
 //   - notify: Change notification and observer pattern
 //
-// # Basic Usage
+// # ConfigSystem Facade
 //
-// Load configuration from default paths:
+// For most use cases, use ConfigSystem which provides a high-level facade:
 //
-//	cfg, err := config.Load()
+//	sys, err := config.NewConfigSystem(ctx,
+//	    config.WithSystemUserConfigDir("/path/to/config"),
+//	    config.WithSystemWatcher(true),
+//	)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//
-//	// Access typed settings
-//	tabSize := cfg.GetInt("editor.tabSize")
-//	theme := cfg.GetString("ui.theme")
+//	defer sys.Close()
 //
 //	// Access typed sections
-//	editor := cfg.Editor()
+//	editor := sys.Editor()
 //	fmt.Println(editor.TabSize)
 //
-// # Type-Safe Access
-//
-// The registry provides type-safe accessors to prevent runtime errors:
-//
-//	// Using generic accessor
-//	tabSize, err := cfg.GetInt("editor.tabSize")
-//	if err != nil {
-//	    // Handle error (wrong type or unknown setting)
+//	// Check system health
+//	health := sys.Health()
+//	if health.Status != config.HealthOK {
+//	    log.Warn("config issues:", health.Errors)
 //	}
 //
-//	// Using typed section
+// # Typed Section Accessors
+//
+// The package provides type-safe accessors for all configuration sections:
+//
+//	// Editor settings
 //	editor := cfg.Editor()
-//	tabSize := editor.TabSize // Compile-time type safety
+//	tabSize := editor.TabSize
+//	insertSpaces := editor.InsertSpaces
 //
-// # Configuration Files
+//	// UI settings
+//	ui := cfg.UI()
+//	theme := ui.Theme
+//	fontSize := ui.FontSize
 //
-// Keystorm uses TOML as the primary configuration format:
+//	// Vim mode settings
+//	vim := cfg.Vim()
+//	enabled := vim.Enabled
 //
-//	# ~/.config/keystorm/settings.toml
-//	[editor]
-//	tabSize = 4
-//	insertSpaces = true
-//	wordWrap = "on"
+//	// Input settings
+//	input := cfg.Input()
+//	leaderKey := input.LeaderKey
 //
-//	[ui]
-//	theme = "dark"
-//	fontSize = 14
+//	// File settings
+//	files := cfg.Files()
+//	encoding := files.Encoding
+//
+//	// Search settings
+//	search := cfg.Search()
+//	maxResults := search.MaxResults
+//
+//	// AI settings
+//	ai := cfg.AI()
+//	provider := ai.Provider
+//
+//	// Logging settings
+//	logging := cfg.Logging()
+//	level := logging.Level
+//
+//	// Terminal settings
+//	terminal := cfg.Terminal()
+//	shell := terminal.Shell
+//
+//	// LSP settings
+//	lsp := cfg.LSP()
+//	enabled := lsp.Enabled
+//
+//	// Path settings
+//	paths := cfg.Paths()
+//	configDir := paths.ConfigDir
+//
+// # Plugin Configuration
+//
+// Plugin configuration is managed via PluginManager:
+//
+//	plugins := cfg.Plugins()
+//
+//	// Get plugin config
+//	pc, ok := plugins.GetPluginConfig("my-plugin")
+//	if ok {
+//	    fmt.Println(pc.Enabled)
+//	}
+//
+//	// Subscribe to plugin changes
+//	sub := plugins.SubscribePlugin("my-plugin", func(change notify.Change) {
+//	    // Handle change
+//	})
+//	defer sub.Unsubscribe()
+//
+// # Keymap Configuration
+//
+// Keymaps are managed via KeymapManager:
+//
+//	keymaps := cfg.Keymaps()
+//
+//	// Load default keymaps
+//	keymaps.LoadDefaults()
+//
+//	// Add user binding
+//	keymaps.AddBinding("normal", config.KeymapBinding{
+//	    Keys:   "g g",
+//	    Action: "cursor.document_start",
+//	})
+//
+//	// Lookup binding
+//	binding, err := keymaps.Lookup("normal", "", "g g")
+//
+// # Configuration Migration
+//
+// The package supports migrating configuration between versions:
+//
+//	m := config.DefaultMigrator()
+//
+//	// Check if migration is needed
+//	if m.NeedsMigration(data) {
+//	    migrated, results, err := m.Migrate(data)
+//	    if err != nil {
+//	        log.Error("migration failed:", err)
+//	    }
+//	}
+//
+// # Change Notifications
+//
+// Subscribe to configuration changes:
+//
+//	// Subscribe to all changes
+//	sub := cfg.Subscribe(func(change notify.Change) {
+//	    fmt.Printf("Changed: %s\n", change.Path)
+//	})
+//	defer sub.Unsubscribe()
+//
+//	// Subscribe to specific path
+//	sub := cfg.SubscribePath("editor", func(change notify.Change) {
+//	    // Handle editor changes
+//	})
 //
 // # Error Handling
 //
@@ -85,6 +178,20 @@
 //   - ErrSettingNotFound: Setting path doesn't exist
 //   - ErrTypeMismatch: Value type doesn't match expected type
 //   - ErrValidationFailed: Value fails schema validation
-//   - ErrParseError: Configuration file parsing failed
 //   - ErrFileNotFound: Configuration file doesn't exist
+//   - ErrLayerNotFound: Configuration layer doesn't exist
+//   - ErrReadOnly: Attempted to modify a read-only layer
+//
+// # Thread Safety
+//
+// All exported types (Config, ConfigSystem, PluginManager, KeymapManager)
+// are safe for concurrent use. Internal locking ensures data consistency.
+//
+// # Performance
+//
+// The configuration system is optimized for read-heavy workloads:
+//   - Merged configuration is cached and invalidated on changes
+//   - File watching uses debouncing to avoid excessive reloads
+//   - Type-safe accessors return snapshot copies to prevent races
+//   - Initial load time is typically under 50ms
 package config

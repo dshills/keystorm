@@ -164,6 +164,60 @@ type LoggingConfig struct {
 
 	// File is the log file path (empty for no file logging).
 	File string
+
+	// MaxSize is the maximum log file size in MB.
+	MaxSize int
+
+	// MaxBackups is the maximum number of log backups.
+	MaxBackups int
+}
+
+// TerminalConfig provides type-safe access to integrated terminal settings.
+type TerminalConfig struct {
+	// Shell is the shell executable path.
+	Shell string
+
+	// FontSize is the terminal font size.
+	FontSize int
+
+	// FontFamily is the terminal font family.
+	FontFamily string
+
+	// CursorStyle is the terminal cursor style ("block", "line", "underline").
+	CursorStyle string
+
+	// Scrollback is the number of scrollback lines.
+	Scrollback int
+}
+
+// LSPConfig provides type-safe access to Language Server Protocol settings.
+type LSPConfig struct {
+	// Enabled enables LSP features.
+	Enabled bool
+
+	// DiagnosticsDelay is the delay before showing diagnostics in milliseconds.
+	DiagnosticsDelay int
+
+	// CompletionTriggerCharacters are characters that trigger completion.
+	CompletionTriggerCharacters []string
+
+	// SignatureHelpTriggerCharacters are characters that trigger signature help.
+	SignatureHelpTriggerCharacters []string
+}
+
+// PathsConfig provides type-safe access to path settings.
+type PathsConfig struct {
+	// ConfigDir is the configuration directory path.
+	ConfigDir string
+
+	// DataDir is the data directory path.
+	DataDir string
+
+	// CacheDir is the cache directory path.
+	CacheDir string
+
+	// PluginDir is the plugin directory path.
+	PluginDir string
 }
 
 // Editor returns type-safe access to editor settings.
@@ -254,9 +308,42 @@ func (c *Config) AI() AIConfig {
 // Logging returns type-safe access to logging settings.
 func (c *Config) Logging() LoggingConfig {
 	return LoggingConfig{
-		Level:  c.getStringOr("logging.level", "info"),
-		Format: c.getStringOr("logging.format", "text"),
-		File:   c.getStringOr("logging.file", ""),
+		Level:      c.getStringOr("logging.level", "info"),
+		Format:     c.getStringOr("logging.format", "text"),
+		File:       c.getStringOr("logging.file", ""),
+		MaxSize:    c.getIntOr("logging.maxSize", 10),
+		MaxBackups: c.getIntOr("logging.maxBackups", 5),
+	}
+}
+
+// Terminal returns type-safe access to integrated terminal settings.
+func (c *Config) Terminal() TerminalConfig {
+	return TerminalConfig{
+		Shell:       c.getStringOr("terminal.shell", ""),
+		FontSize:    c.getIntOr("terminal.fontSize", 14),
+		FontFamily:  c.getStringOr("terminal.fontFamily", "monospace"),
+		CursorStyle: c.getStringOr("terminal.cursorStyle", "block"),
+		Scrollback:  c.getIntOr("terminal.scrollback", 10000),
+	}
+}
+
+// LSP returns type-safe access to Language Server Protocol settings.
+func (c *Config) LSP() LSPConfig {
+	return LSPConfig{
+		Enabled:                        c.getBoolOr("lsp.enabled", true),
+		DiagnosticsDelay:               c.getIntOr("lsp.diagnosticsDelay", 500),
+		CompletionTriggerCharacters:    c.getStringSliceOr("lsp.completionTriggerCharacters", []string{".", ":", "<"}),
+		SignatureHelpTriggerCharacters: c.getStringSliceOr("lsp.signatureHelpTriggerCharacters", []string{"(", ","}),
+	}
+}
+
+// Paths returns type-safe access to path settings.
+func (c *Config) Paths() PathsConfig {
+	return PathsConfig{
+		ConfigDir: c.getStringOr("paths.configDir", ""),
+		DataDir:   c.getStringOr("paths.dataDir", ""),
+		CacheDir:  c.getStringOr("paths.cacheDir", ""),
+		PluginDir: c.getStringOr("paths.pluginDir", ""),
 	}
 }
 
