@@ -205,6 +205,15 @@ func (c *gitCommand) run() (string, error) {
 	return stdout.String(), nil
 }
 
+// toExecCmd converts gitCommand to an exec.Cmd for custom stdin/stdout handling.
+func (c *gitCommand) toExecCmd() *exec.Cmd {
+	cmd := exec.Command("git", c.args...)
+	if c.dir != "" {
+		cmd.Dir = c.dir
+	}
+	return cmd
+}
+
 // gitLines executes a git command and returns output lines.
 func (r *Repository) gitLines(args ...string) ([]string, error) {
 	output, err := r.git(args...)

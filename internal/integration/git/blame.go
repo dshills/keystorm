@@ -244,6 +244,10 @@ func parseBlame(path, output string) *BlameResult {
 
 			// Create blame line
 			info := commits[currentHash]
+			if info == nil {
+				// Skip malformed output
+				continue
+			}
 			blameLine := BlameLine{
 				Hash:           currentHash,
 				Author:         info.Author,

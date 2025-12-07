@@ -2,7 +2,6 @@ package git
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -558,7 +557,11 @@ func (r *Repository) ApplyPatch(patch string, opts ApplyOptions) error {
 	execCmd.Stderr = &stderr
 
 	if err := execCmd.Run(); err != nil {
-		return fmt.Errorf("apply patch: %s", strings.TrimSpace(stderr.String()))
+		stderrStr := strings.TrimSpace(stderr.String())
+		if stderrStr != "" {
+			return fmt.Errorf("apply patch: %w: %s", err, stderrStr)
+		}
+		return fmt.Errorf("apply patch: %w", err)
 	}
 
 	// Invalidate status cache
@@ -583,13 +586,4 @@ type ApplyOptions struct {
 
 	// ThreeWay attempts three-way merge.
 	ThreeWay bool
-}
-
-// toExecCmd converts gitCommand to an exec.Cmd.
-func (c *gitCommand) toExecCmd() *exec.Cmd {
-	cmd := exec.Command("git", c.args...)
-	if c.dir != "" {
-		cmd.Dir = c.dir
-	}
-	return cmd
 }

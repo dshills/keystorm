@@ -453,7 +453,8 @@ func Clone(url, path string, opts CloneOptions) error {
 	}
 
 	// Execute git clone directly (not through a repository)
-	cmd := newGitCommand(path, args...)
+	// Use empty working directory since the target path doesn't exist yet
+	cmd := newGitCommand("", args...)
 	if _, err := cmd.run(); err != nil {
 		return fmt.Errorf("clone %s: %w", url, err)
 	}

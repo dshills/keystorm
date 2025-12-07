@@ -291,10 +291,12 @@ func (a *SSHAgent) ListKeys() ([]string, error) {
 	}
 
 	cmd := exec.Command("ssh-add", "-l")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// Exit code 1 means no keys
-		if strings.Contains(string(output), "no identities") {
+		// Exit code 1 with "no identities" means no keys loaded (not an error)
+		outputStr := string(output)
+		if strings.Contains(outputStr, "no identities") ||
+			strings.Contains(outputStr, "The agent has no identities") {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list agent keys: %w", err)
@@ -358,7 +360,8 @@ func (a *SSHAgent) RemoveAllKeys() error {
 // ConfigureGitSSH configures git to use a specific SSH key.
 func ConfigureGitSSH(keyPath string) error {
 	// Set GIT_SSH_COMMAND environment variable
-	sshCmd := fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes", keyPath)
+	// Quote the path to handle spaces and special characters
+	sshCmd := fmt.Sprintf("ssh -i %q -o IdentitiesOnly=yes", keyPath)
 	return os.Setenv("GIT_SSH_COMMAND", sshCmd)
 }
 
