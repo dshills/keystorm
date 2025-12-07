@@ -467,3 +467,283 @@ func TestConfig_ConfigErrorsCopy(t *testing.T) {
 		t.Error("ConfigErrors() returned shared map, mutation affected other calls")
 	}
 }
+
+func TestConfig_Integration(t *testing.T) {
+	c := New(WithWatcher(false))
+	defer c.Close()
+	if err := c.Load(context.Background()); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	integration := c.Integration()
+
+	// Test top-level defaults
+	if !integration.Enabled {
+		t.Error("Enabled = false, want true")
+	}
+	if integration.MaxProcesses != 10 {
+		t.Errorf("MaxProcesses = %d, want 10", integration.MaxProcesses)
+	}
+	if integration.ShutdownTimeoutSeconds != 30 {
+		t.Errorf("ShutdownTimeoutSeconds = %d, want 30", integration.ShutdownTimeoutSeconds)
+	}
+
+	// Test git defaults
+	if !integration.Git.Enabled {
+		t.Error("Git.Enabled = false, want true")
+	}
+	if integration.Git.AutoFetch {
+		t.Error("Git.AutoFetch = true, want false")
+	}
+	if integration.Git.AutoFetchInterval != 300 {
+		t.Errorf("Git.AutoFetchInterval = %d, want 300", integration.Git.AutoFetchInterval)
+	}
+	if integration.Git.DefaultRemote != "origin" {
+		t.Errorf("Git.DefaultRemote = %q, want 'origin'", integration.Git.DefaultRemote)
+	}
+
+	// Test debug defaults
+	if !integration.Debug.Enabled {
+		t.Error("Debug.Enabled = false, want true")
+	}
+	if !integration.Debug.AutoAttachBreakpoints {
+		t.Error("Debug.AutoAttachBreakpoints = false, want true")
+	}
+	if !integration.Debug.ShowInlineValues {
+		t.Error("Debug.ShowInlineValues = false, want true")
+	}
+	if integration.Debug.StopOnEntry {
+		t.Error("Debug.StopOnEntry = true, want false")
+	}
+	if integration.Debug.Timeout != 30 {
+		t.Errorf("Debug.Timeout = %d, want 30", integration.Debug.Timeout)
+	}
+
+	// Test debug adapters defaults
+	if integration.Debug.Adapters.Delve.Path != "dlv" {
+		t.Errorf("Debug.Adapters.Delve.Path = %q, want 'dlv'", integration.Debug.Adapters.Delve.Path)
+	}
+	if integration.Debug.Adapters.Node.InspectPort != 9229 {
+		t.Errorf("Debug.Adapters.Node.InspectPort = %d, want 9229", integration.Debug.Adapters.Node.InspectPort)
+	}
+	if !integration.Debug.Adapters.Node.SourceMaps {
+		t.Error("Debug.Adapters.Node.SourceMaps = false, want true")
+	}
+	if !integration.Debug.Adapters.Python.JustMyCode {
+		t.Error("Debug.Adapters.Python.JustMyCode = false, want true")
+	}
+
+	// Test task defaults
+	if !integration.Task.Enabled {
+		t.Error("Task.Enabled = false, want true")
+	}
+	if !integration.Task.AutoDetect {
+		t.Error("Task.AutoDetect = false, want true")
+	}
+	if integration.Task.MaxConcurrent != 5 {
+		t.Errorf("Task.MaxConcurrent = %d, want 5", integration.Task.MaxConcurrent)
+	}
+	if integration.Task.OutputBufferSize != 65536 {
+		t.Errorf("Task.OutputBufferSize = %d, want 65536", integration.Task.OutputBufferSize)
+	}
+
+	// Test task sources defaults
+	if !integration.Task.Sources.Makefile {
+		t.Error("Task.Sources.Makefile = false, want true")
+	}
+	if !integration.Task.Sources.PackageJSON {
+		t.Error("Task.Sources.PackageJSON = false, want true")
+	}
+	if !integration.Task.Sources.TasksJSON {
+		t.Error("Task.Sources.TasksJSON = false, want true")
+	}
+	if integration.Task.Sources.Custom {
+		t.Error("Task.Sources.Custom = true, want false")
+	}
+
+	// Test terminal defaults
+	if !integration.Terminal.Enabled {
+		t.Error("Terminal.Enabled = false, want true")
+	}
+	if integration.Terminal.ScrollbackLines != 10000 {
+		t.Errorf("Terminal.ScrollbackLines = %d, want 10000", integration.Terminal.ScrollbackLines)
+	}
+	if !integration.Terminal.CopyOnSelect {
+		t.Error("Terminal.CopyOnSelect = false, want true")
+	}
+	if integration.Terminal.CursorStyle != "block" {
+		t.Errorf("Terminal.CursorStyle = %q, want 'block'", integration.Terminal.CursorStyle)
+	}
+}
+
+func TestConfig_IntegrationWithOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create settings file with overrides
+	settingsPath := filepath.Join(tmpDir, "settings.toml")
+	settingsContent := `
+[integration]
+enabled = false
+maxProcesses = 20
+shutdownTimeout = 60
+
+[integration.git]
+enabled = false
+autoFetch = true
+autoFetchInterval = 600
+signCommits = true
+defaultRemote = "upstream"
+
+[integration.debug]
+enabled = false
+defaultAdapter = "delve"
+stopOnEntry = true
+timeout = 60
+
+[integration.debug.adapters.delve]
+path = "/usr/local/bin/dlv"
+buildFlags = "-tags=debug"
+
+[integration.debug.adapters.node]
+inspectPort = 9999
+sourceMaps = false
+
+[integration.task]
+enabled = false
+autoDetect = false
+maxConcurrent = 10
+outputBufferSize = 131072
+
+[integration.task.sources]
+makefile = false
+packageJson = false
+custom = true
+customPath = ".myproject/tasks.yaml"
+
+[integration.terminal]
+enabled = false
+defaultShell = "/bin/zsh"
+scrollbackLines = 20000
+copyOnSelect = false
+cursorStyle = "underline"
+fontSize = 16
+`
+	if err := os.WriteFile(settingsPath, []byte(settingsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := New(
+		WithUserConfigDir(tmpDir),
+		WithWatcher(false),
+	)
+	defer c.Close()
+	if err := c.Load(context.Background()); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	integration := c.Integration()
+
+	// Test overridden top-level values
+	if integration.Enabled {
+		t.Error("Enabled = true, want false")
+	}
+	if integration.MaxProcesses != 20 {
+		t.Errorf("MaxProcesses = %d, want 20", integration.MaxProcesses)
+	}
+	if integration.ShutdownTimeoutSeconds != 60 {
+		t.Errorf("ShutdownTimeoutSeconds = %d, want 60", integration.ShutdownTimeoutSeconds)
+	}
+
+	// Test overridden git values
+	if integration.Git.Enabled {
+		t.Error("Git.Enabled = true, want false")
+	}
+	if !integration.Git.AutoFetch {
+		t.Error("Git.AutoFetch = false, want true")
+	}
+	if integration.Git.AutoFetchInterval != 600 {
+		t.Errorf("Git.AutoFetchInterval = %d, want 600", integration.Git.AutoFetchInterval)
+	}
+	if !integration.Git.SignCommits {
+		t.Error("Git.SignCommits = false, want true")
+	}
+	if integration.Git.DefaultRemote != "upstream" {
+		t.Errorf("Git.DefaultRemote = %q, want 'upstream'", integration.Git.DefaultRemote)
+	}
+
+	// Test overridden debug values
+	if integration.Debug.Enabled {
+		t.Error("Debug.Enabled = true, want false")
+	}
+	if integration.Debug.DefaultAdapter != "delve" {
+		t.Errorf("Debug.DefaultAdapter = %q, want 'delve'", integration.Debug.DefaultAdapter)
+	}
+	if !integration.Debug.StopOnEntry {
+		t.Error("Debug.StopOnEntry = false, want true")
+	}
+	if integration.Debug.Timeout != 60 {
+		t.Errorf("Debug.Timeout = %d, want 60", integration.Debug.Timeout)
+	}
+
+	// Test overridden debug adapters
+	if integration.Debug.Adapters.Delve.Path != "/usr/local/bin/dlv" {
+		t.Errorf("Debug.Adapters.Delve.Path = %q, want '/usr/local/bin/dlv'", integration.Debug.Adapters.Delve.Path)
+	}
+	if integration.Debug.Adapters.Delve.BuildFlags != "-tags=debug" {
+		t.Errorf("Debug.Adapters.Delve.BuildFlags = %q, want '-tags=debug'", integration.Debug.Adapters.Delve.BuildFlags)
+	}
+	if integration.Debug.Adapters.Node.InspectPort != 9999 {
+		t.Errorf("Debug.Adapters.Node.InspectPort = %d, want 9999", integration.Debug.Adapters.Node.InspectPort)
+	}
+	if integration.Debug.Adapters.Node.SourceMaps {
+		t.Error("Debug.Adapters.Node.SourceMaps = true, want false")
+	}
+
+	// Test overridden task values
+	if integration.Task.Enabled {
+		t.Error("Task.Enabled = true, want false")
+	}
+	if integration.Task.AutoDetect {
+		t.Error("Task.AutoDetect = true, want false")
+	}
+	if integration.Task.MaxConcurrent != 10 {
+		t.Errorf("Task.MaxConcurrent = %d, want 10", integration.Task.MaxConcurrent)
+	}
+	if integration.Task.OutputBufferSize != 131072 {
+		t.Errorf("Task.OutputBufferSize = %d, want 131072", integration.Task.OutputBufferSize)
+	}
+
+	// Test overridden task sources
+	if integration.Task.Sources.Makefile {
+		t.Error("Task.Sources.Makefile = true, want false")
+	}
+	if integration.Task.Sources.PackageJSON {
+		t.Error("Task.Sources.PackageJSON = true, want false")
+	}
+	if !integration.Task.Sources.Custom {
+		t.Error("Task.Sources.Custom = false, want true")
+	}
+	if integration.Task.Sources.CustomPath != ".myproject/tasks.yaml" {
+		t.Errorf("Task.Sources.CustomPath = %q, want '.myproject/tasks.yaml'", integration.Task.Sources.CustomPath)
+	}
+
+	// Test overridden terminal values
+	if integration.Terminal.Enabled {
+		t.Error("Terminal.Enabled = true, want false")
+	}
+	if integration.Terminal.DefaultShell != "/bin/zsh" {
+		t.Errorf("Terminal.DefaultShell = %q, want '/bin/zsh'", integration.Terminal.DefaultShell)
+	}
+	if integration.Terminal.ScrollbackLines != 20000 {
+		t.Errorf("Terminal.ScrollbackLines = %d, want 20000", integration.Terminal.ScrollbackLines)
+	}
+	if integration.Terminal.CopyOnSelect {
+		t.Error("Terminal.CopyOnSelect = true, want false")
+	}
+	if integration.Terminal.CursorStyle != "underline" {
+		t.Errorf("Terminal.CursorStyle = %q, want 'underline'", integration.Terminal.CursorStyle)
+	}
+	if integration.Terminal.FontSize != 16 {
+		t.Errorf("Terminal.FontSize = %d, want 16", integration.Terminal.FontSize)
+	}
+}

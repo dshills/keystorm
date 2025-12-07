@@ -347,6 +347,295 @@ func (c *Config) Paths() PathsConfig {
 	}
 }
 
+// IntegrationSettings provides type-safe access to integration layer settings.
+type IntegrationSettings struct {
+	// Enabled controls whether the integration layer is active.
+	Enabled bool
+
+	// WorkspaceRoot is the root directory for the workspace.
+	WorkspaceRoot string
+
+	// MaxProcesses limits concurrent managed processes.
+	MaxProcesses int
+
+	// ShutdownTimeoutSeconds is how long to wait for graceful process shutdown.
+	ShutdownTimeoutSeconds int
+
+	// Git provides git integration settings.
+	Git GitSettings
+
+	// Debug provides debugger integration settings.
+	Debug DebugSettings
+
+	// Task provides task runner settings.
+	Task TaskSettings
+
+	// TerminalSettings provides terminal settings.
+	Terminal TerminalSettings
+}
+
+// GitSettings provides settings for git integration.
+type GitSettings struct {
+	// Enabled controls whether git integration is active.
+	Enabled bool
+
+	// AutoFetch enables periodic fetching from remotes.
+	AutoFetch bool
+
+	// AutoFetchInterval is the interval in seconds between auto-fetches.
+	AutoFetchInterval int
+
+	// ShowInlineBlame shows blame annotations inline.
+	ShowInlineBlame bool
+
+	// ConfirmCommit requires confirmation before committing.
+	ConfirmCommit bool
+
+	// SignCommits enables GPG signing of commits.
+	SignCommits bool
+
+	// DefaultRemote is the default remote for push/pull operations.
+	DefaultRemote string
+}
+
+// DebugSettings provides settings for debugger integration.
+type DebugSettings struct {
+	// Enabled controls whether debug integration is active.
+	Enabled bool
+
+	// DefaultAdapter is the default debug adapter to use.
+	DefaultAdapter string
+
+	// AutoAttachBreakpoints automatically sets breakpoints from saved state.
+	AutoAttachBreakpoints bool
+
+	// ShowInlineValues shows variable values inline during debugging.
+	ShowInlineValues bool
+
+	// StopOnEntry stops at entry point when starting debug session.
+	StopOnEntry bool
+
+	// Timeout is the debug session timeout in seconds.
+	Timeout int
+
+	// Adapters provides per-adapter configurations.
+	Adapters DebugAdaptersSettings
+}
+
+// DebugAdaptersSettings provides per-adapter debug settings.
+type DebugAdaptersSettings struct {
+	// Delve provides Go debugger (Delve) settings.
+	Delve DelveAdapterSettings
+
+	// Node provides Node.js debugger settings.
+	Node NodeAdapterSettings
+
+	// Python provides Python debugger settings.
+	Python PythonAdapterSettings
+}
+
+// DelveAdapterSettings provides Delve-specific debug settings.
+type DelveAdapterSettings struct {
+	// Path is the path to the dlv executable.
+	Path string
+
+	// BuildFlags are additional build flags for dlv.
+	BuildFlags string
+
+	// Args are additional arguments to pass to dlv.
+	Args []string
+}
+
+// NodeAdapterSettings provides Node.js debugger settings.
+type NodeAdapterSettings struct {
+	// Path is the path to the node executable.
+	Path string
+
+	// InspectPort is the debug port for Node.js inspector.
+	InspectPort int
+
+	// SourceMaps enables source map support.
+	SourceMaps bool
+}
+
+// PythonAdapterSettings provides Python debugger settings.
+type PythonAdapterSettings struct {
+	// Path is the path to the python executable.
+	Path string
+
+	// DebuggerPath is the path to debugpy or pdb.
+	DebuggerPath string
+
+	// JustMyCode limits debugging to user code only.
+	JustMyCode bool
+}
+
+// TaskSettings provides task runner settings.
+type TaskSettings struct {
+	// Enabled controls whether task integration is active.
+	Enabled bool
+
+	// AutoDetect enables automatic detection of task files.
+	AutoDetect bool
+
+	// DefaultShell is the default shell for running tasks.
+	DefaultShell string
+
+	// MaxConcurrent limits concurrent task execution.
+	MaxConcurrent int
+
+	// OutputBufferSize is the size of the output buffer per task.
+	OutputBufferSize int
+
+	// Sources configures task discovery from different sources.
+	Sources TaskSourcesSettings
+}
+
+// TaskSourcesSettings configures task discovery sources.
+type TaskSourcesSettings struct {
+	// Makefile enables discovery of targets from Makefile.
+	Makefile bool
+
+	// PackageJSON enables discovery of scripts from package.json.
+	PackageJSON bool
+
+	// TasksJSON enables discovery from .vscode/tasks.json.
+	TasksJSON bool
+
+	// Custom enables discovery from custom task definitions.
+	Custom bool
+
+	// CustomPath is the path to custom task definitions file.
+	CustomPath string
+}
+
+// TerminalSettings provides terminal settings.
+type TerminalSettings struct {
+	// Enabled controls whether terminal integration is active.
+	Enabled bool
+
+	// DefaultShell is the default shell to spawn.
+	DefaultShell string
+
+	// ShellArgs are arguments to pass to the shell.
+	ShellArgs []string
+
+	// ScrollbackLines is the number of scrollback lines to keep.
+	ScrollbackLines int
+
+	// CopyOnSelect enables copy-on-select behavior.
+	CopyOnSelect bool
+
+	// CursorStyle is the cursor style (block, underline, bar).
+	CursorStyle string
+
+	// FontSize is the terminal font size.
+	FontSize int
+}
+
+// Integration returns type-safe access to integration layer settings.
+func (c *Config) Integration() IntegrationSettings {
+	return IntegrationSettings{
+		Enabled:                c.getBoolOr("integration.enabled", true),
+		WorkspaceRoot:          c.getStringOr("integration.workspaceRoot", ""),
+		MaxProcesses:           c.getIntOr("integration.maxProcesses", 10),
+		ShutdownTimeoutSeconds: c.getIntOr("integration.shutdownTimeout", 30),
+		Git:                    c.gitSettings(),
+		Debug:                  c.debugSettings(),
+		Task:                   c.taskSettings(),
+		Terminal:               c.terminalSettings(),
+	}
+}
+
+func (c *Config) gitSettings() GitSettings {
+	return GitSettings{
+		Enabled:           c.getBoolOr("integration.git.enabled", true),
+		AutoFetch:         c.getBoolOr("integration.git.autoFetch", false),
+		AutoFetchInterval: c.getIntOr("integration.git.autoFetchInterval", 300),
+		ShowInlineBlame:   c.getBoolOr("integration.git.showInlineBlame", false),
+		ConfirmCommit:     c.getBoolOr("integration.git.confirmCommit", true),
+		SignCommits:       c.getBoolOr("integration.git.signCommits", false),
+		DefaultRemote:     c.getStringOr("integration.git.defaultRemote", "origin"),
+	}
+}
+
+func (c *Config) debugSettings() DebugSettings {
+	return DebugSettings{
+		Enabled:               c.getBoolOr("integration.debug.enabled", true),
+		DefaultAdapter:        c.getStringOr("integration.debug.defaultAdapter", ""),
+		AutoAttachBreakpoints: c.getBoolOr("integration.debug.autoAttachBreakpoints", true),
+		ShowInlineValues:      c.getBoolOr("integration.debug.showInlineValues", true),
+		StopOnEntry:           c.getBoolOr("integration.debug.stopOnEntry", false),
+		Timeout:               c.getIntOr("integration.debug.timeout", 30),
+		Adapters:              c.debugAdaptersSettings(),
+	}
+}
+
+func (c *Config) debugAdaptersSettings() DebugAdaptersSettings {
+	return DebugAdaptersSettings{
+		Delve:  c.delveAdapterSettings(),
+		Node:   c.nodeAdapterSettings(),
+		Python: c.pythonAdapterSettings(),
+	}
+}
+
+func (c *Config) delveAdapterSettings() DelveAdapterSettings {
+	return DelveAdapterSettings{
+		Path:       c.getStringOr("integration.debug.adapters.delve.path", "dlv"),
+		BuildFlags: c.getStringOr("integration.debug.adapters.delve.buildFlags", ""),
+		Args:       c.getStringSliceOr("integration.debug.adapters.delve.args", nil),
+	}
+}
+
+func (c *Config) nodeAdapterSettings() NodeAdapterSettings {
+	return NodeAdapterSettings{
+		Path:        c.getStringOr("integration.debug.adapters.node.path", "node"),
+		InspectPort: c.getIntOr("integration.debug.adapters.node.inspectPort", 9229),
+		SourceMaps:  c.getBoolOr("integration.debug.adapters.node.sourceMaps", true),
+	}
+}
+
+func (c *Config) pythonAdapterSettings() PythonAdapterSettings {
+	return PythonAdapterSettings{
+		Path:         c.getStringOr("integration.debug.adapters.python.path", "python3"),
+		DebuggerPath: c.getStringOr("integration.debug.adapters.python.debuggerPath", ""),
+		JustMyCode:   c.getBoolOr("integration.debug.adapters.python.justMyCode", true),
+	}
+}
+
+func (c *Config) taskSettings() TaskSettings {
+	return TaskSettings{
+		Enabled:          c.getBoolOr("integration.task.enabled", true),
+		AutoDetect:       c.getBoolOr("integration.task.autoDetect", true),
+		DefaultShell:     c.getStringOr("integration.task.defaultShell", ""),
+		MaxConcurrent:    c.getIntOr("integration.task.maxConcurrent", 5),
+		OutputBufferSize: c.getIntOr("integration.task.outputBufferSize", 65536),
+		Sources:          c.taskSourcesSettings(),
+	}
+}
+
+func (c *Config) taskSourcesSettings() TaskSourcesSettings {
+	return TaskSourcesSettings{
+		Makefile:    c.getBoolOr("integration.task.sources.makefile", true),
+		PackageJSON: c.getBoolOr("integration.task.sources.packageJson", true),
+		TasksJSON:   c.getBoolOr("integration.task.sources.tasksJson", true),
+		Custom:      c.getBoolOr("integration.task.sources.custom", false),
+		CustomPath:  c.getStringOr("integration.task.sources.customPath", ".keystorm/tasks.json"),
+	}
+}
+
+func (c *Config) terminalSettings() TerminalSettings {
+	return TerminalSettings{
+		Enabled:         c.getBoolOr("integration.terminal.enabled", true),
+		DefaultShell:    c.getStringOr("integration.terminal.defaultShell", ""),
+		ShellArgs:       c.getStringSliceOr("integration.terminal.shellArgs", nil),
+		ScrollbackLines: c.getIntOr("integration.terminal.scrollbackLines", 10000),
+		CopyOnSelect:    c.getBoolOr("integration.terminal.copyOnSelect", true),
+		CursorStyle:     c.getStringOr("integration.terminal.cursorStyle", "block"),
+		FontSize:        c.getIntOr("integration.terminal.fontSize", 14),
+	}
+}
+
 // Helper methods for getting values with defaults.
 // These methods only return the default for ErrSettingNotFound.
 // Type errors are logged and return the default to avoid breaking callers,

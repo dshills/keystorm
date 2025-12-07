@@ -64,6 +64,21 @@ const (
 
 	// CapabilityProject grants project/workspace access.
 	CapabilityProject Capability = "editor.project"
+
+	// CapabilityIntegration grants access to integration layer features.
+	CapabilityIntegration Capability = "integration"
+
+	// CapabilityGit grants git operations access.
+	CapabilityGit Capability = "integration.git"
+
+	// CapabilityDebug grants debugger access.
+	CapabilityDebug Capability = "integration.debug"
+
+	// CapabilityTask grants task runner access.
+	CapabilityTask Capability = "integration.task"
+
+	// CapabilityTerminal grants terminal access.
+	CapabilityTerminal Capability = "integration.terminal"
 )
 
 // CapabilityInfo provides metadata about a capability.
@@ -248,6 +263,45 @@ var capabilityRegistry = map[Capability]CapabilityInfo{
 		Description:          "Access project/workspace operations including file enumeration, search, and workspace roots",
 		Parent:               CapabilityEditor,
 		RiskLevel:            RiskMedium,
+		RequiresUserApproval: true,
+	},
+	CapabilityIntegration: {
+		Name:                 CapabilityIntegration,
+		DisplayName:          "Integration Access",
+		Description:          "Access integration layer (git, debug, tasks, terminal)",
+		RiskLevel:            RiskMedium,
+		RequiresUserApproval: true,
+	},
+	CapabilityGit: {
+		Name:                 CapabilityGit,
+		DisplayName:          "Git Access",
+		Description:          "Perform git operations (status, commit, branch, etc.)",
+		Parent:               CapabilityIntegration,
+		RiskLevel:            RiskMedium,
+		RequiresUserApproval: true,
+	},
+	CapabilityDebug: {
+		Name:                 CapabilityDebug,
+		DisplayName:          "Debugger Access",
+		Description:          "Control debug sessions and breakpoints",
+		Parent:               CapabilityIntegration,
+		RiskLevel:            RiskMedium,
+		RequiresUserApproval: true,
+	},
+	CapabilityTask: {
+		Name:                 CapabilityTask,
+		DisplayName:          "Task Runner Access",
+		Description:          "Run and manage tasks",
+		Parent:               CapabilityIntegration,
+		RiskLevel:            RiskHigh,
+		RequiresUserApproval: true,
+	},
+	CapabilityTerminal: {
+		Name:                 CapabilityTerminal,
+		DisplayName:          "Terminal Access",
+		Description:          "Create and interact with terminal sessions",
+		Parent:               CapabilityIntegration,
+		RiskLevel:            RiskCritical,
 		RequiresUserApproval: true,
 	},
 }

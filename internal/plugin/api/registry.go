@@ -140,7 +140,7 @@ func installKSLoader(L *lua.LState) error {
 	// Collect all _ks_* globals into the ks table.
 	// Only modules that were successfully registered (based on capability checks) will have
 	// their _ks_* global set, so this effectively respects capability restrictions.
-	moduleNames := []string{"buf", "cursor", "mode", "util", "keymap", "command", "event", "config", "ui", "lsp", "project"}
+	moduleNames := []string{"buf", "cursor", "mode", "util", "keymap", "command", "event", "config", "ui", "lsp", "project", "integration"}
 	for _, name := range moduleNames {
 		globalName := "_ks_" + name
 		val := L.GetGlobal(globalName)
@@ -218,6 +218,9 @@ type Context struct {
 
 	// LSP provides language server protocol operations (completions, diagnostics, etc.).
 	LSP LSPProvider
+
+	// Integration provides access to integration layer features (git, debug, tasks).
+	Integration IntegrationProvider
 }
 
 // BufferProvider defines the interface for buffer operations.
@@ -304,4 +307,159 @@ type ModeProvider interface {
 
 	// Is checks if currently in the given mode.
 	Is(mode string) bool
+}
+
+// IntegrationProvider defines the interface for integration layer operations.
+// It provides access to git, debugger, task runner, and terminal features.
+type IntegrationProvider interface {
+	// WorkspaceRoot returns the workspace root directory.
+	WorkspaceRoot() string
+
+	// Health returns the integration layer health status.
+	Health() IntegrationHealth
+
+	// Git returns the git provider, or nil if not available.
+	Git() GitProvider
+
+	// Debug returns the debug provider, or nil if not available.
+	Debug() DebugProvider
+
+	// Task returns the task provider, or nil if not available.
+	Task() TaskProvider
+}
+
+// IntegrationHealth represents the health status of the integration layer.
+type IntegrationHealth struct {
+	Status        string            // "healthy", "degraded", "unhealthy"
+	Uptime        int64             // Uptime in milliseconds
+	ProcessCount  int               // Number of active child processes
+	WorkspaceRoot string            // Configured workspace root
+	Components    map[string]string // Component name -> status
+}
+
+// GitProvider defines the interface for git operations.
+type GitProvider interface {
+	// Status returns the current git status.
+	Status() (GitStatus, error)
+
+	// Branch returns the current branch name.
+	Branch() (string, error)
+
+	// Branches lists all branches.
+	Branches() ([]string, error)
+
+	// Commit creates a commit with the given message.
+	Commit(message string) error
+
+	// Add stages files for commit.
+	Add(paths []string) error
+
+	// Diff returns the diff for staged or unstaged changes.
+	Diff(staged bool) (string, error)
+}
+
+// GitStatus represents the current git repository status.
+type GitStatus struct {
+	Branch       string
+	Ahead        int
+	Behind       int
+	Staged       []string
+	Modified     []string
+	Untracked    []string
+	HasConflicts bool
+	IsClean      bool
+}
+
+// DebugProvider defines the interface for debugger operations.
+type DebugProvider interface {
+	// Start starts a debug session with the given configuration.
+	Start(config DebugConfig) (string, error)
+
+	// Stop stops the debug session with the given ID.
+	Stop(sessionID string) error
+
+	// Sessions lists active debug sessions.
+	Sessions() []DebugSession
+
+	// SetBreakpoint sets a breakpoint at the given location.
+	SetBreakpoint(file string, line int) (string, error)
+
+	// RemoveBreakpoint removes a breakpoint by ID.
+	RemoveBreakpoint(id string) error
+
+	// Continue continues execution in the session.
+	Continue(sessionID string) error
+
+	// StepOver steps over the current line.
+	StepOver(sessionID string) error
+
+	// StepInto steps into the current function call.
+	StepInto(sessionID string) error
+
+	// StepOut steps out of the current function.
+	StepOut(sessionID string) error
+
+	// Variables returns variables in the current scope.
+	Variables(sessionID string) ([]DebugVariable, error)
+}
+
+// DebugConfig configures a debug session.
+type DebugConfig struct {
+	Adapter     string            // Debug adapter name (e.g., "delve", "node")
+	Program     string            // Program or script to debug
+	Args        []string          // Arguments to pass to the program
+	Env         map[string]string // Environment variables
+	Cwd         string            // Working directory
+	StopOnEntry bool              // Stop at program entry
+}
+
+// DebugSession represents an active debug session.
+type DebugSession struct {
+	ID      string
+	Adapter string
+	Program string
+	State   string // "running", "paused", "stopped"
+}
+
+// DebugVariable represents a variable in the debugger.
+type DebugVariable struct {
+	Name  string
+	Value string
+	Type  string
+}
+
+// TaskProvider defines the interface for task runner operations.
+type TaskProvider interface {
+	// List returns all available tasks.
+	List() ([]TaskInfo, error)
+
+	// Run starts a task by name.
+	Run(name string) (string, error)
+
+	// Stop stops a running task by ID.
+	Stop(taskID string) error
+
+	// Status returns the status of a task.
+	Status(taskID string) (TaskStatus, error)
+
+	// Output returns the output of a task.
+	Output(taskID string) (string, error)
+}
+
+// TaskInfo describes an available task.
+type TaskInfo struct {
+	Name        string
+	Source      string // Source of the task (e.g., "Makefile", "package.json")
+	Description string
+	Command     string
+}
+
+// TaskStatus represents the current status of a task.
+type TaskStatus struct {
+	ID        string
+	Name      string
+	State     string // "pending", "running", "completed", "failed"
+	ExitCode  int
+	StartTime int64 // Unix timestamp in milliseconds
+	EndTime   int64 // Unix timestamp in milliseconds, 0 if still running
 }

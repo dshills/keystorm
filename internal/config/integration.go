@@ -310,6 +310,11 @@ func (s *ConfigSystem) ClearConfigErrors() {
 	s.config.ClearConfigErrors()
 }
 
+// Integration returns type-safe access to integration layer settings.
+func (s *ConfigSystem) Integration() IntegrationSettings {
+	return s.config.Integration()
+}
+
 // Health returns the health status of the configuration system.
 func (s *ConfigSystem) Health() SystemHealth {
 	errors := s.config.ConfigErrors()
