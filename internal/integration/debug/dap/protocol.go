@@ -223,12 +223,13 @@ type EvaluateArguments struct {
 
 // EvaluateResponseBody is the response body for evaluate.
 type EvaluateResponseBody struct {
-	Result             string `json:"result"`
-	Type               string `json:"type,omitempty"`
-	VariablesReference int    `json:"variablesReference"`
-	NamedVariables     int    `json:"namedVariables,omitempty"`
-	IndexedVariables   int    `json:"indexedVariables,omitempty"`
-	MemoryReference    string `json:"memoryReference,omitempty"`
+	Result             string                    `json:"result"`
+	Type               string                    `json:"type,omitempty"`
+	VariablesReference int                       `json:"variablesReference"`
+	NamedVariables     int                       `json:"namedVariables,omitempty"`
+	IndexedVariables   int                       `json:"indexedVariables,omitempty"`
+	MemoryReference    string                    `json:"memoryReference,omitempty"`
+	PresentationHint   *VariablePresentationHint `json:"presentationHint,omitempty"`
 }
 
 // ThreadsResponseBody is the response body for threads.
@@ -509,4 +510,86 @@ type SourceArguments struct {
 type SourceResponseBody struct {
 	Content  string `json:"content"`
 	MimeType string `json:"mimeType,omitempty"`
+}
+
+// RestartFrameArguments are the arguments for restartFrame.
+type RestartFrameArguments struct {
+	FrameID int `json:"frameId"`
+}
+
+// StepInTargetsArguments are the arguments for stepInTargets.
+type StepInTargetsArguments struct {
+	FrameID int `json:"frameId"`
+}
+
+// StepInTargetsResponseBody is the response body for stepInTargets.
+type StepInTargetsResponseBody struct {
+	Targets []StepInTarget `json:"targets"`
+}
+
+// StepInTarget represents a possible step-in target.
+type StepInTarget struct {
+	ID    int    `json:"id"`
+	Label string `json:"label"`
+}
+
+// GotoTargetsArguments are the arguments for gotoTargets.
+type GotoTargetsArguments struct {
+	Source Source `json:"source"`
+	Line   int    `json:"line"`
+	Column int    `json:"column,omitempty"`
+}
+
+// GotoTargetsResponseBody is the response body for gotoTargets.
+type GotoTargetsResponseBody struct {
+	Targets []GotoTarget `json:"targets"`
+}
+
+// GotoTarget represents a goto target location.
+type GotoTarget struct {
+	ID                 int    `json:"id"`
+	Label              string `json:"label"`
+	Line               int    `json:"line"`
+	Column             int    `json:"column,omitempty"`
+	EndLine            int    `json:"endLine,omitempty"`
+	EndColumn          int    `json:"endColumn,omitempty"`
+	InstructionPointer string `json:"instructionPointerReference,omitempty"`
+}
+
+// GotoArguments are the arguments for goto.
+type GotoArguments struct {
+	ThreadID int `json:"threadId"`
+	TargetID int `json:"targetId"`
+}
+
+// DataBreakpointInfoArguments are the arguments for dataBreakpointInfo.
+type DataBreakpointInfoArguments struct {
+	VariablesReference int    `json:"variablesReference,omitempty"`
+	Name               string `json:"name"`
+}
+
+// DataBreakpointInfoResponseBody is the response body for dataBreakpointInfo.
+type DataBreakpointInfoResponseBody struct {
+	DataID      string   `json:"dataId"`
+	Description string   `json:"description"`
+	AccessTypes []string `json:"accessTypes,omitempty"` // "read", "write", "readWrite"
+	CanPersist  bool     `json:"canPersist,omitempty"`
+}
+
+// SetDataBreakpointsArguments are the arguments for setDataBreakpoints.
+type SetDataBreakpointsArguments struct {
+	Breakpoints []DataBreakpoint `json:"breakpoints"`
+}
+
+// DataBreakpoint represents a data breakpoint.
+type DataBreakpoint struct {
+	DataID       string `json:"dataId"`
+	AccessType   string `json:"accessType,omitempty"` // "read", "write", "readWrite"
+	Condition    string `json:"condition,omitempty"`
+	HitCondition string `json:"hitCondition,omitempty"`
+}
+
+// SetDataBreakpointsResponseBody is the response body for setDataBreakpoints.
+type SetDataBreakpointsResponseBody struct {
+	Breakpoints []Breakpoint `json:"breakpoints"`
 }

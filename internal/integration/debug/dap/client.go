@@ -804,3 +804,107 @@ func (c *Client) Source(ctx context.Context, args SourceArguments) (*SourceRespo
 
 	return &body, nil
 }
+
+// RestartFrame sends the restartFrame request.
+func (c *Client) RestartFrame(ctx context.Context, args RestartFrameArguments) error {
+	resp, err := c.sendRequest(ctx, "restartFrame", args)
+	if err != nil {
+		return err
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("restartFrame failed: %s", resp.Message)
+	}
+
+	return nil
+}
+
+// StepInTargets sends the stepInTargets request.
+func (c *Client) StepInTargets(ctx context.Context, args StepInTargetsArguments) ([]StepInTarget, error) {
+	resp, err := c.sendRequest(ctx, "stepInTargets", args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("stepInTargets failed: %s", resp.Message)
+	}
+
+	var body StepInTargetsResponseBody
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		return nil, fmt.Errorf("unmarshal stepInTargets: %w", err)
+	}
+
+	return body.Targets, nil
+}
+
+// GotoTargets sends the gotoTargets request.
+func (c *Client) GotoTargets(ctx context.Context, args GotoTargetsArguments) ([]GotoTarget, error) {
+	resp, err := c.sendRequest(ctx, "gotoTargets", args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("gotoTargets failed: %s", resp.Message)
+	}
+
+	var body GotoTargetsResponseBody
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		return nil, fmt.Errorf("unmarshal gotoTargets: %w", err)
+	}
+
+	return body.Targets, nil
+}
+
+// Goto sends the goto request.
+func (c *Client) Goto(ctx context.Context, args GotoArguments) error {
+	resp, err := c.sendRequest(ctx, "goto", args)
+	if err != nil {
+		return err
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("goto failed: %s", resp.Message)
+	}
+
+	return nil
+}
+
+// DataBreakpointInfo sends the dataBreakpointInfo request.
+func (c *Client) DataBreakpointInfo(ctx context.Context, args DataBreakpointInfoArguments) (*DataBreakpointInfoResponseBody, error) {
+	resp, err := c.sendRequest(ctx, "dataBreakpointInfo", args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("dataBreakpointInfo failed: %s", resp.Message)
+	}
+
+	var body DataBreakpointInfoResponseBody
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		return nil, fmt.Errorf("unmarshal dataBreakpointInfo: %w", err)
+	}
+
+	return &body, nil
+}
+
+// SetDataBreakpoints sends the setDataBreakpoints request.
+func (c *Client) SetDataBreakpoints(ctx context.Context, args SetDataBreakpointsArguments) ([]Breakpoint, error) {
+	resp, err := c.sendRequest(ctx, "setDataBreakpoints", args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("setDataBreakpoints failed: %s", resp.Message)
+	}
+
+	var body SetDataBreakpointsResponseBody
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		return nil, fmt.Errorf("unmarshal setDataBreakpoints: %w", err)
+	}
+
+	return body.Breakpoints, nil
+}
