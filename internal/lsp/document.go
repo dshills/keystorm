@@ -38,6 +38,9 @@ type ManagedDocument struct {
 	// Sync state
 	SyncKind TextDocumentSyncKind
 	LastSync time.Time
+
+	// Cached position converter (invalidated on content change)
+	positionConverter *PositionConverter
 }
 
 // DocumentManagerOption configures the document manager.
@@ -166,6 +169,9 @@ func (dm *DocumentManager) ChangeDocument(path string, changes []TextDocumentCon
 			doc.Content = applyTextChange(doc.Content, *change.Range, change.Text)
 		}
 	}
+
+	// Invalidate cached position converter
+	doc.positionConverter = nil
 
 	// Cancel existing timer if any
 	if timer, ok := dm.pendingTimers[uri]; ok {
@@ -326,6 +332,22 @@ func (dm *DocumentManager) GetVersion(path string) (int, bool) {
 	return doc.Version, true
 }
 
+// GetPositionConverter returns a cached position converter for a document.
+// This avoids recreating the converter for each position conversion operation.
+func (dm *DocumentManager) GetPositionConverter(path string) (*PositionConverter, bool) {
+	uri := FilePathToURI(path)
+
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	doc, exists := dm.documents[uri]
+	if !exists {
+		return nil, false
+	}
+
+	return doc.PositionConverter(), true
+}
+
 // IsOpen returns true if a document is open.
 func (dm *DocumentManager) IsOpen(path string) bool {
 	uri := FilePathToURI(path)
@@ -398,6 +420,15 @@ func (dm *DocumentManager) SetSyncKind(path string, kind TextDocumentSyncKind) e
 
 	doc.SyncKind = kind
 	return nil
+}
+
+// PositionConverter returns a cached position converter for this document.
+// The converter is lazily created and cached until the document content changes.
+func (doc *ManagedDocument) PositionConverter() *PositionConverter {
+	if doc.positionConverter == nil {
+		doc.positionConverter = NewPositionConverter(doc.Content)
+	}
+	return doc.positionConverter
 }
 
 // applyTextChange applies an incremental text change to content.

@@ -21,14 +21,35 @@ type DiffOptions struct {
 
 	// IgnoreBlankLines treats blank lines as equal.
 	IgnoreBlankLines bool
+
+	// MaxLines limits the maximum number of lines to diff.
+	// If exceeded, a heuristic diff is used. Default is 10000.
+	// Set to 0 to disable the limit.
+	MaxLines int
+
+	// MaxMemoryMB limits memory usage for diff computation.
+	// If the estimated memory exceeds this, a heuristic diff is used.
+	// Default is 100MB. Set to 0 to disable the limit.
+	MaxMemoryMB int
 }
 
 // DefaultDiffOptions returns default diff options.
 func DefaultDiffOptions() DiffOptions {
 	return DiffOptions{
 		ContextLines: 3,
+		MaxLines:     10000,
+		MaxMemoryMB:  100,
 	}
 }
+
+// Default limits for diff computation.
+const (
+	// DefaultMaxDiffLines is the default maximum lines for Myers diff.
+	DefaultMaxDiffLines = 10000
+
+	// DefaultMaxDiffMemoryMB is the default memory limit in megabytes.
+	DefaultMaxDiffMemoryMB = 100
+)
 
 // DiffType indicates the type of a diff hunk.
 type DiffType uint8
@@ -168,6 +189,38 @@ func toLines(r rope.Rope) []string {
 
 // computeLineDiffFromLines computes diff from pre-split lines.
 func computeLineDiffFromLines(oldLines, newLines []string, opts DiffOptions) DiffResult {
+	n := len(oldLines)
+	m := len(newLines)
+
+	// Check line count limits
+	maxLines := opts.MaxLines
+	if maxLines == 0 {
+		maxLines = DefaultMaxDiffLines
+	}
+	if maxLines > 0 && (n > maxLines || m > maxLines) {
+		// Fall back to heuristic diff for large inputs
+		return heuristicDiff(oldLines, newLines, opts)
+	}
+
+	// Check estimated memory usage
+	// Myers algorithm uses O((n+m) * d) memory where d is the edit distance
+	// In worst case, d = n + m, so memory is O((n+m)^2) integers
+	// Each V vector copy is 2*(n+m)+1 integers = 8 bytes each on 64-bit
+	maxMemMB := opts.MaxMemoryMB
+	if maxMemMB == 0 {
+		maxMemMB = DefaultMaxDiffMemoryMB
+	}
+	if maxMemMB > 0 {
+		maxD := n + m
+		// Estimated memory: maxD iterations * (2*maxD+1) * 8 bytes per int
+		estimatedBytes := int64(maxD) * int64(2*maxD+1) * 8
+		estimatedMB := estimatedBytes / (1024 * 1024)
+		if estimatedMB > int64(maxMemMB) {
+			// Fall back to heuristic diff for memory-intensive inputs
+			return heuristicDiff(oldLines, newLines, opts)
+		}
+	}
+
 	// Run Myers diff
 	script := myersDiff(oldLines, newLines, opts)
 
@@ -176,9 +229,84 @@ func computeLineDiffFromLines(oldLines, newLines []string, opts DiffOptions) Dif
 
 	return DiffResult{
 		Hunks:        hunks,
-		OldLineCount: len(oldLines),
-		NewLineCount: len(newLines),
+		OldLineCount: n,
+		NewLineCount: m,
 	}
+}
+
+// heuristicDiff provides a simple line-by-line diff for large inputs.
+// It's less optimal than Myers but uses O(n+m) memory.
+func heuristicDiff(oldLines, newLines []string, opts DiffOptions) DiffResult {
+	n := len(oldLines)
+	m := len(newLines)
+
+	// Build a map of old lines for quick lookup
+	oldLineMap := make(map[string][]int)
+	for i, line := range oldLines {
+		key := normalizeLineForDiff(line, opts)
+		oldLineMap[key] = append(oldLineMap[key], i)
+	}
+
+	// Track which old lines have been matched
+	matched := make([]bool, n)
+	newMatched := make([]bool, m)
+
+	// First pass: find exact matches
+	for j, line := range newLines {
+		key := normalizeLineForDiff(line, opts)
+		if indices, ok := oldLineMap[key]; ok {
+			for _, i := range indices {
+				if !matched[i] {
+					matched[i] = true
+					newMatched[j] = true
+					break
+				}
+			}
+		}
+	}
+
+	// Build edit script from matches
+	var ops []editOp
+	i, j := 0, 0
+	for i < n || j < m {
+		// Skip matched lines (they're equal)
+		for i < n && j < m && matched[i] && newMatched[j] {
+			ops = append(ops, editOp{op: DiffEqual, oldIndex: i, newIndex: j})
+			i++
+			j++
+		}
+
+		// Handle unmatched old lines (deletions)
+		for i < n && !matched[i] {
+			ops = append(ops, editOp{op: DiffDelete, oldIndex: i})
+			i++
+		}
+
+		// Handle unmatched new lines (insertions)
+		for j < m && !newMatched[j] {
+			ops = append(ops, editOp{op: DiffInsert, newIndex: j})
+			j++
+		}
+	}
+
+	hunks := buildHunks(oldLines, newLines, ops, opts.ContextLines)
+
+	return DiffResult{
+		Hunks:        hunks,
+		OldLineCount: n,
+		NewLineCount: m,
+	}
+}
+
+// normalizeLineForDiff normalizes a line based on diff options.
+func normalizeLineForDiff(line string, opts DiffOptions) string {
+	if opts.IgnoreCase {
+		line = strings.ToLower(line)
+	}
+	if opts.IgnoreWhitespace {
+		line = strings.TrimSpace(line)
+	}
+	return line
 }
 
 // editOp represents a single edit operation in the diff.

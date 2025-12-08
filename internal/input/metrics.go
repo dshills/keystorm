@@ -1,6 +1,7 @@
 package input
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -236,16 +237,12 @@ func calculateLatencyStats(latencies []time.Duration) (avg, maxLat, p99 time.Dur
 	}
 	avg = sum / time.Duration(len(valid))
 
-	// Sort for percentile calculation (simple approach)
+	// Sort for percentile calculation using O(n log n) algorithm
 	sorted := make([]time.Duration, len(valid))
 	copy(sorted, valid)
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[i] > sorted[j] {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
-	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i] < sorted[j]
+	})
 
 	// P99
 	idx := int(float64(len(sorted)) * 0.99)

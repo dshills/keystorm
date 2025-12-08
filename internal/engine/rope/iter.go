@@ -310,12 +310,26 @@ func (it *ByteIterator) Offset() ByteOffset {
 }
 
 // ReverseRuneIterator iterates over runes in reverse order.
+// Uses chunk-based iteration for amortized O(1) per rune.
 type ReverseRuneIterator struct {
 	rope    Rope
-	offset  ByteOffset
+	offset  ByteOffset // Current rune's byte offset
 	current rune
 	size    int
 	started bool
+
+	// Chunk caching for amortized O(1) access
+	chunkData   string     // Current chunk's text data
+	chunkStart  ByteOffset // Start offset of current chunk
+	chunkIdx    int        // Current position within chunk (pointing at start of current rune)
+	chunksStack []reverseChunkFrame
+}
+
+// reverseChunkFrame tracks position in tree for reverse chunk traversal.
+type reverseChunkFrame struct {
+	node     *Node
+	childIdx int // Current child index (for internal nodes)
+	chunkIdx int // Current chunk index (for leaf nodes)
 }
 
 // ReverseRunes returns an iterator over runes in reverse order.
@@ -331,30 +345,195 @@ func (r Rope) ReverseRunes() *ReverseRuneIterator {
 func (it *ReverseRuneIterator) Next() bool {
 	if !it.started {
 		it.started = true
+		// Initialize by finding the last chunk
+		if it.rope.IsEmpty() {
+			return false
+		}
+		if !it.loadLastChunk() {
+			return false
+		}
+		// Position at end of last chunk
+		it.chunkIdx = len(it.chunkData)
 	}
 
-	if it.offset == 0 {
+	// Move backwards in current chunk to find previous rune
+	if it.chunkIdx > 0 {
+		return it.prevRuneInChunk()
+	}
+
+	// Need to load previous chunk
+	if !it.loadPrevChunk() {
 		return false
 	}
 
-	// Find start of previous rune
-	it.offset--
-	for it.offset > 0 {
-		b, ok := it.rope.ByteAt(it.offset)
-		if !ok {
-			return false
-		}
-		if isUTF8Start(b) {
-			break
-		}
-		it.offset--
+	// Position at end of new chunk
+	it.chunkIdx = len(it.chunkData)
+	return it.prevRuneInChunk()
+}
+
+// prevRuneInChunk moves to the previous rune within the current chunk.
+func (it *ReverseRuneIterator) prevRuneInChunk() bool {
+	if it.chunkIdx <= 0 {
+		return false
+	}
+
+	// Move backwards to find start of previous rune
+	it.chunkIdx--
+	for it.chunkIdx > 0 && !isUTF8Start(it.chunkData[it.chunkIdx]) {
+		it.chunkIdx--
 	}
 
 	// Decode the rune
-	text := it.rope.Slice(it.offset, it.offset+4) // Max UTF-8 is 4 bytes
-	it.current, it.size = utf8.DecodeRuneInString(text)
+	it.current, it.size = utf8.DecodeRuneInString(it.chunkData[it.chunkIdx:])
+	it.offset = it.chunkStart + ByteOffset(it.chunkIdx)
 
 	return it.size > 0
+}
+
+// loadLastChunk initializes the iterator to point at the last chunk.
+func (it *ReverseRuneIterator) loadLastChunk() bool {
+	if it.rope.root == nil {
+		return false
+	}
+
+	// Build stack by descending to rightmost leaf
+	it.chunksStack = make([]reverseChunkFrame, 0, 16)
+	node := it.rope.root
+	offset := ByteOffset(0)
+
+	for !node.IsLeaf() {
+		lastChild := len(node.children) - 1
+		// Calculate offset to this child
+		for i := 0; i < lastChild; i++ {
+			offset += node.childSummaries[i].Bytes
+		}
+		it.chunksStack = append(it.chunksStack, reverseChunkFrame{
+			node:     node,
+			childIdx: lastChild,
+		})
+		node = node.children[lastChild]
+	}
+
+	// Now at a leaf - get last chunk
+	if len(node.chunks) == 0 {
+		return false
+	}
+
+	lastChunk := len(node.chunks) - 1
+	// Calculate offset to this chunk
+	for i := 0; i < lastChunk; i++ {
+		offset += ByteOffset(node.chunks[i].Len())
+	}
+
+	it.chunksStack = append(it.chunksStack, reverseChunkFrame{
+		node:     node,
+		chunkIdx: lastChunk,
+	})
+
+	it.chunkData = node.chunks[lastChunk].String()
+	it.chunkStart = offset
+
+	return true
+}
+
+// loadPrevChunk loads the previous chunk in reverse order.
+func (it *ReverseRuneIterator) loadPrevChunk() bool {
+	if len(it.chunksStack) == 0 {
+		return false
+	}
+
+	// Pop current leaf frame
+	frame := &it.chunksStack[len(it.chunksStack)-1]
+
+	if frame.node.IsLeaf() {
+		// Try previous chunk in same leaf
+		if frame.chunkIdx > 0 {
+			frame.chunkIdx--
+			// Recalculate chunk start offset
+			offset := it.calculateNodeOffset(len(it.chunksStack) - 1)
+			for i := 0; i < frame.chunkIdx; i++ {
+				offset += ByteOffset(frame.node.chunks[i].Len())
+			}
+			it.chunkData = frame.node.chunks[frame.chunkIdx].String()
+			it.chunkStart = offset
+			return true
+		}
+
+		// Need to go up and find previous subtree
+		it.chunksStack = it.chunksStack[:len(it.chunksStack)-1]
+	}
+
+	// Walk up and find a node with a previous child
+	for len(it.chunksStack) > 0 {
+		frame := &it.chunksStack[len(it.chunksStack)-1]
+
+		if frame.childIdx > 0 {
+			frame.childIdx--
+			// Descend to rightmost leaf of this subtree
+			return it.descendToRightmostLeaf(len(it.chunksStack) - 1)
+		}
+
+		it.chunksStack = it.chunksStack[:len(it.chunksStack)-1]
+	}
+
+	return false
+}
+
+// descendToRightmostLeaf descends from the current position to the rightmost leaf.
+func (it *ReverseRuneIterator) descendToRightmostLeaf(stackIdx int) bool {
+	frame := it.chunksStack[stackIdx]
+	node := frame.node.children[frame.childIdx]
+	offset := it.calculateNodeOffset(stackIdx)
+
+	// Calculate offset to this child
+	for i := 0; i < frame.childIdx; i++ {
+		offset += frame.node.childSummaries[i].Bytes
+	}
+
+	for !node.IsLeaf() {
+		lastChild := len(node.children) - 1
+		for i := 0; i < lastChild; i++ {
+			offset += node.childSummaries[i].Bytes
+		}
+		it.chunksStack = append(it.chunksStack, reverseChunkFrame{
+			node:     node,
+			childIdx: lastChild,
+		})
+		node = node.children[lastChild]
+	}
+
+	if len(node.chunks) == 0 {
+		return false
+	}
+
+	lastChunk := len(node.chunks) - 1
+	for i := 0; i < lastChunk; i++ {
+		offset += ByteOffset(node.chunks[i].Len())
+	}
+
+	it.chunksStack = append(it.chunksStack, reverseChunkFrame{
+		node:     node,
+		chunkIdx: lastChunk,
+	})
+
+	it.chunkData = node.chunks[lastChunk].String()
+	it.chunkStart = offset
+
+	return true
+}
+
+// calculateNodeOffset calculates the byte offset at the start of a node in the stack.
+func (it *ReverseRuneIterator) calculateNodeOffset(stackIdx int) ByteOffset {
+	var offset ByteOffset
+	for i := 0; i < stackIdx; i++ {
+		frame := it.chunksStack[i]
+		if !frame.node.IsLeaf() {
+			for j := 0; j < frame.childIdx; j++ {
+				offset += frame.node.childSummaries[j].Bytes
+			}
+		}
+	}
+	return offset
 }
 
 // Rune returns the current rune.
