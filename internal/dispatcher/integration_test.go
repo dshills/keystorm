@@ -254,9 +254,17 @@ func newMockRenderer() *mockRenderer {
 func (r *mockRenderer) Redraw()                    { r.redrawCalled = true }
 func (r *mockRenderer) RedrawLines(lines []uint32) { r.redrawCalled = true }
 func (r *mockRenderer) ScrollTo(line, col uint32)  { r.scrollToCalls++ }
-func (r *mockRenderer) CenterOnLine(line uint32)   { r.centerCalls++ }
+func (r *mockRenderer) ScrollToReveal(line, col uint32) {
+	if line < r.firstLine || line > r.lastLine {
+		r.scrollToCalls++
+	}
+}
+func (r *mockRenderer) CenterOnLine(line uint32) { r.centerCalls++ }
 func (r *mockRenderer) VisibleLineRange() (uint32, uint32) {
 	return r.firstLine, r.lastLine
+}
+func (r *mockRenderer) IsLineVisible(line uint32) bool {
+	return line >= r.firstLine && line <= r.lastLine
 }
 
 // Integration Tests

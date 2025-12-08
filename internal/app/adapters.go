@@ -357,10 +357,12 @@ type RendererAdapter struct {
 // This interface is satisfied by *renderer.RendererExecWrapper.
 type RendererInterface interface {
 	ScrollTo(line, col uint32)
+	ScrollToReveal(line, col uint32)
 	CenterOnLine(line uint32)
 	Redraw()
 	RedrawLines(lines []uint32)
 	VisibleLineRange() (start, end uint32)
+	IsLineVisible(line uint32) bool
 }
 
 // NewRendererAdapter creates a new renderer adapter.
@@ -372,6 +374,19 @@ func (a *RendererAdapter) ScrollTo(line, col uint32) {
 	if a.renderer != nil {
 		a.renderer.ScrollTo(line, col)
 	}
+}
+
+func (a *RendererAdapter) ScrollToReveal(line, col uint32) {
+	if a.renderer != nil {
+		a.renderer.ScrollToReveal(line, col)
+	}
+}
+
+func (a *RendererAdapter) IsLineVisible(line uint32) bool {
+	if a.renderer != nil {
+		return a.renderer.IsLineVisible(line)
+	}
+	return false
 }
 
 func (a *RendererAdapter) CenterOnLine(line uint32) {
@@ -403,10 +418,12 @@ func (a *RendererAdapter) VisibleLineRange() (start, end uint32) {
 type NullRenderer struct{}
 
 func (NullRenderer) ScrollTo(line, col uint32)             {}
+func (NullRenderer) ScrollToReveal(line, col uint32)       {}
 func (NullRenderer) CenterOnLine(line uint32)              {}
 func (NullRenderer) Redraw()                               {}
 func (NullRenderer) RedrawLines(lines []uint32)            {}
 func (NullRenderer) VisibleLineRange() (start, end uint32) { return 0, 100 }
+func (NullRenderer) IsLineVisible(line uint32) bool        { return true }
 
 // RendererExecWrapper wraps a renderer.Renderer to implement RendererInterface.
 // Uses minimal interface to avoid coupling to specific renderer implementation.
@@ -417,6 +434,10 @@ type RendererExecWrapper struct {
 	}
 	dirtyer interface {
 		MarkDirty()
+	}
+	viewporter interface {
+		IsLineVisible(line uint32) bool
+		VisibleLineRange() (start, end uint32)
 	}
 }
 
@@ -432,7 +453,29 @@ func NewRendererExecWrapper(r interface {
 	}
 }
 
+// NewRendererExecWrapperWithViewport creates a wrapper with viewport support.
+func NewRendererExecWrapperWithViewport(r interface {
+	ScrollToReveal(line uint32, col int, smooth bool)
+	CenterOnLine(line uint32, smooth bool)
+	MarkDirty()
+}, vp interface {
+	IsLineVisible(line uint32) bool
+	VisibleLineRange() (start, end uint32)
+}) *RendererExecWrapper {
+	return &RendererExecWrapper{
+		scroller:   r,
+		dirtyer:    r,
+		viewporter: vp,
+	}
+}
+
 func (w *RendererExecWrapper) ScrollTo(line, col uint32) {
+	if w.scroller != nil {
+		w.scroller.ScrollToReveal(line, int(col), false)
+	}
+}
+
+func (w *RendererExecWrapper) ScrollToReveal(line, col uint32) {
 	if w.scroller != nil {
 		w.scroller.ScrollToReveal(line, int(col), false)
 	}
@@ -458,7 +501,15 @@ func (w *RendererExecWrapper) RedrawLines(lines []uint32) {
 }
 
 func (w *RendererExecWrapper) VisibleLineRange() (start, end uint32) {
-	// TODO: Need to expose viewport's VisibleLineRange on Renderer
-	// For now, return a reasonable default
+	if w.viewporter != nil {
+		return w.viewporter.VisibleLineRange()
+	}
 	return 0, 100
+}
+
+func (w *RendererExecWrapper) IsLineVisible(line uint32) bool {
+	if w.viewporter != nil {
+		return w.viewporter.IsLineVisible(line)
+	}
+	return false
 }

@@ -176,6 +176,13 @@ func (r *mockRenderer) ScrollTo(line, col uint32) {
 	r.endLine = line + height
 }
 
+func (r *mockRenderer) ScrollToReveal(line, col uint32) {
+	// Scroll if line is out of view
+	if line < r.startLine || line > r.endLine {
+		r.ScrollTo(line, col)
+	}
+}
+
 func (r *mockRenderer) CenterOnLine(line uint32) {
 	height := r.endLine - r.startLine
 	halfHeight := height / 2
@@ -193,6 +200,10 @@ func (r *mockRenderer) RedrawLines(lines []uint32) {}
 
 func (r *mockRenderer) VisibleLineRange() (start, end uint32) {
 	return r.startLine, r.endLine
+}
+
+func (r *mockRenderer) IsLineVisible(line uint32) bool {
+	return line >= r.startLine && line <= r.endLine
 }
 
 func TestHandler_Namespace(t *testing.T) {

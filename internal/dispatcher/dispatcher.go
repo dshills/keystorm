@@ -261,7 +261,27 @@ func (d *Dispatcher) processResult(action input.Action, result handler.Result, c
 			}
 		} else if result.ViewUpdate.CenterLine != nil {
 			ctx.Renderer.CenterOnLine(*result.ViewUpdate.CenterLine)
+		} else {
+			// Auto-scroll to keep cursor visible after any action
+			d.ensureCursorVisible(ctx)
 		}
+	}
+}
+
+// ensureCursorVisible scrolls the viewport to keep the primary cursor visible.
+func (d *Dispatcher) ensureCursorVisible(ctx *execctx.ExecutionContext) {
+	if ctx.Cursors == nil || ctx.Engine == nil || ctx.Renderer == nil {
+		return
+	}
+
+	// Get primary cursor position
+	primary := ctx.Cursors.Primary()
+	point := ctx.Engine.OffsetToPoint(primary.Cursor())
+
+	// Check if cursor is visible
+	if !ctx.Renderer.IsLineVisible(point.Line) {
+		// Scroll to reveal cursor with some context
+		ctx.Renderer.ScrollToReveal(point.Line, point.Column)
 	}
 }
 

@@ -381,7 +381,7 @@ func (app *Application) WireDispatcher() {
 
 	// Wire renderer adapter if available
 	if app.renderer != nil {
-		rendererWrapper := NewRendererExecWrapper(app.renderer)
+		rendererWrapper := NewRendererExecWrapperWithViewport(app.renderer, app.renderer.Viewport())
 		rendererAdapter := NewRendererAdapter(rendererWrapper)
 		app.dispatcher.SetRenderer(rendererAdapter)
 	}

@@ -115,6 +115,7 @@ type HistoryInterface interface {
 type RendererInterface interface {
 	// Scrolling
 	ScrollTo(line, col uint32)
+	ScrollToReveal(line, col uint32)
 	CenterOnLine(line uint32)
 
 	// Redrawing
@@ -123,6 +124,7 @@ type RendererInterface interface {
 
 	// View info
 	VisibleLineRange() (start, end uint32)
+	IsLineVisible(line uint32) bool
 }
 
 // ExecutionContext provides context for action execution.
