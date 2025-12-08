@@ -51,6 +51,12 @@ type Application struct {
 	// Event subscriptions
 	subscriptions *subscriptionManager
 
+	// Logging
+	logger *Logger
+
+	// Performance metrics
+	metrics *Metrics
+
 	// State
 	running atomic.Bool
 	done    chan struct{}
