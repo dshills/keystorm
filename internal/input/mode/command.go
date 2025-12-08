@@ -221,11 +221,11 @@ func (m *CommandMode) parseCommand(cmd string) *Action {
 	case "ls", "buffers":
 		return &Action{Name: "buffer.list"}
 	case "sp", "split":
-		return &Action{Name: "window.split_horizontal"}
+		return &Action{Name: "window.splitHorizontal"}
 	case "vs", "vsplit":
-		return &Action{Name: "window.split_vertical"}
+		return &Action{Name: "window.splitVertical"}
 	case "only":
-		return &Action{Name: "window.close_others"}
+		return &Action{Name: "window.closeOther"}
 	case "close":
 		return &Action{Name: "window.close"}
 	case "tabnew":
@@ -247,7 +247,7 @@ func (m *CommandMode) parseCommand(cmd string) *Action {
 		// :N - go to line N
 		if cmd[0] >= '0' && cmd[0] <= '9' {
 			return &Action{
-				Name: "cursor.go_to_line",
+				Name: "cursor.gotoLine",
 				Args: map[string]any{"line": cmd},
 			}
 		}

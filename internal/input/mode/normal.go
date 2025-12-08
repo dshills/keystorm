@@ -329,13 +329,13 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "view.page_up"},
+			Action:   &Action{Name: "view.pageUp"},
 		}
 	case key.KeyPageDown:
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "view.page_down"},
+			Action:   &Action{Name: "view.pageDown"},
 		}
 	}
 
@@ -352,25 +352,25 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "view.page_down"},
+				Action:   &Action{Name: "view.pageDown"},
 			}
 		case 'b', 'B': // Page up
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "view.page_up"},
+				Action:   &Action{Name: "view.pageUp"},
 			}
 		case 'd', 'D': // Half page down
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "view.half_page_down"},
+				Action:   &Action{Name: "view.halfPageDown"},
 			}
 		case 'u', 'U': // Half page up
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "view.half_page_up"},
+				Action:   &Action{Name: "view.halfPageUp"},
 			}
 		}
 	}

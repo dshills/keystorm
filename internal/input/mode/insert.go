@@ -154,12 +154,12 @@ func (m *InsertMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 	case key.KeyPageUp:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "view.page_up"},
+			Action:   &Action{Name: "view.pageUp"},
 		}
 	case key.KeyPageDown:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "view.page_down"},
+			Action:   &Action{Name: "view.pageDown"},
 		}
 	}
 
