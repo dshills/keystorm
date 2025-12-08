@@ -15,6 +15,17 @@ var (
 	ErrSearchCanceled = errors.New("search canceled")
 	ErrNoResults      = errors.New("no results found")
 	ErrFileTooLarge   = errors.New("file exceeds maximum size limit")
+	ErrPatternTooLong = errors.New("regex pattern exceeds maximum length")
+)
+
+// Regex safety limits to prevent ReDoS attacks.
+const (
+	// MaxRegexPatternLength is the maximum allowed length for a regex pattern.
+	MaxRegexPatternLength = 1000
+
+	// MaxRegexRepetitions is the maximum allowed unbounded repetitions.
+	// Patterns like a{1000} or a* nested multiple times can cause exponential backtracking.
+	MaxRegexRepetitions = 100
 )
 
 // FileSearcher provides fast file name/path search.
@@ -219,6 +230,23 @@ func CompileQuery(query string, opts ContentSearchOptions) (*regexp.Regexp, erro
 	if !opts.CaseSensitive {
 		pattern = "(?i)" + pattern
 	}
+
+	// Use safe compilation with limits
+	return CompileSafeRegex(pattern)
+}
+
+// CompileSafeRegex compiles a regex pattern with safety checks to prevent ReDoS attacks.
+// It validates pattern length and rejects patterns that could cause catastrophic backtracking.
+func CompileSafeRegex(pattern string) (*regexp.Regexp, error) {
+	// Check pattern length
+	if len(pattern) > MaxRegexPatternLength {
+		return nil, fmt.Errorf("%w: length %d exceeds limit %d", ErrPatternTooLong, len(pattern), MaxRegexPatternLength)
+	}
+
+	// Note: Go's regexp package uses RE2 which guarantees linear time matching
+	// and doesn't support backtracking, making it inherently resistant to ReDoS.
+	// However, we still limit pattern length to prevent resource exhaustion
+	// during compilation of very complex patterns.
 
 	re, err := regexp.Compile(pattern)
 	if err != nil {

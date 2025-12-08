@@ -156,6 +156,12 @@ func New(backend backend.Backend, opts Options) *Renderer {
 		BlinkOnType:    true,
 	}
 
+	// Ensure MaxFPS is at least 1 to prevent division by zero
+	maxFPS := opts.MaxFPS
+	if maxFPS < 1 {
+		maxFPS = 60 // Default to 60 FPS
+	}
+
 	r := &Renderer{
 		opts:         opts,
 		backend:      backend,
@@ -168,7 +174,7 @@ func New(backend backend.Backend, opts Options) *Renderer {
 		selManager:   selection.NewManager(),
 		selRenderer:  selection.NewRenderer(selection.DefaultConfig()),
 		lastFrame:    time.Now(),
-		minFrameTime: time.Second / time.Duration(opts.MaxFPS),
+		minFrameTime: time.Second / time.Duration(maxFPS),
 		needsRedraw:  true,
 		fullRedraw:   true,
 	}
@@ -286,7 +292,14 @@ func (r *Renderer) SetOptions(opts Options) {
 	defer r.mu.Unlock()
 
 	r.opts = opts
-	r.minFrameTime = time.Second / time.Duration(opts.MaxFPS)
+
+	// Ensure MaxFPS is at least 1 to prevent division by zero
+	maxFPS := opts.MaxFPS
+	if maxFPS < 1 {
+		maxFPS = 60 // Default to 60 FPS
+	}
+	r.minFrameTime = time.Second / time.Duration(maxFPS)
+
 	r.viewport.SetMargins(
 		opts.ScrollMarginTop,
 		opts.ScrollMarginBottom,

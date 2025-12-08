@@ -12,10 +12,17 @@ import (
 
 // Common errors.
 var (
-	ErrNotFound      = errors.New("entry not found")
-	ErrAlreadyExists = errors.New("entry already exists")
-	ErrInvalidQuery  = errors.New("invalid query")
-	ErrIndexClosed   = errors.New("index is closed")
+	ErrNotFound       = errors.New("entry not found")
+	ErrAlreadyExists  = errors.New("entry already exists")
+	ErrInvalidQuery   = errors.New("invalid query")
+	ErrIndexClosed    = errors.New("index is closed")
+	ErrPatternTooLong = errors.New("regex pattern exceeds maximum length")
+)
+
+// Regex safety limits to prevent resource exhaustion.
+const (
+	// MaxRegexPatternLength is the maximum allowed length for a regex pattern.
+	MaxRegexPatternLength = 1000
 )
 
 // FileInfo represents information about a file or directory.

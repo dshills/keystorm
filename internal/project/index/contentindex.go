@@ -222,7 +222,13 @@ func (ci *ContentIndex) Search(ctx context.Context, query string, opts ContentSe
 }
 
 // SearchRegex searches using a regular expression.
+// Pattern length is limited to prevent resource exhaustion during compilation.
 func (ci *ContentIndex) SearchRegex(ctx context.Context, pattern string, opts ContentSearchOptions) ([]ContentSearchResult, error) {
+	// Validate pattern length to prevent resource exhaustion
+	if len(pattern) > MaxRegexPatternLength {
+		return nil, ErrPatternTooLong
+	}
+
 	ci.mu.RLock()
 	defer ci.mu.RUnlock()
 

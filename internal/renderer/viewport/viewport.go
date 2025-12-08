@@ -37,7 +37,16 @@ type Viewport struct {
 }
 
 // NewViewport creates a viewport with the given size.
+// Width and height are clamped to a minimum of 1 to prevent underflow.
 func NewViewport(width, height int) *Viewport {
+	// Ensure minimum dimensions to prevent underflow in calculations
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+
 	return &Viewport{
 		topLine:      0,
 		leftColumn:   0,
@@ -81,6 +90,10 @@ func (v *Viewport) BottomLine() uint32 {
 
 // bottomLine returns the last visible line (internal, no lock).
 func (v *Viewport) bottomLine() uint32 {
+	// Guard against zero height to prevent underflow
+	if v.height < 1 {
+		return v.topLine
+	}
 	bottom := v.topLine + uint32(v.height) - 1
 	if v.maxLine > 0 && bottom > v.maxLine-1 {
 		bottom = v.maxLine - 1
@@ -103,9 +116,18 @@ func (v *Viewport) RightColumn() int {
 }
 
 // Resize updates the viewport size.
+// Width and height are clamped to a minimum of 1 to prevent underflow.
 func (v *Viewport) Resize(width, height int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+
+	// Ensure minimum dimensions to prevent underflow in calculations
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
 
 	v.width = width
 	v.height = height
