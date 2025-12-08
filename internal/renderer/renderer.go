@@ -134,6 +134,9 @@ type Renderer struct {
 
 	// Gutter state
 	gutterWidth int
+
+	// Reserved space at bottom (for status line, etc.)
+	reservedBottomRows int
 }
 
 // New creates a new renderer with the given backend and options.
@@ -227,7 +230,7 @@ func (r *Renderer) Resize(width, height int) {
 
 	r.width = width
 	r.height = height
-	r.viewport.Resize(width, height)
+	r.viewport.Resize(width, r.effectiveHeight())
 	r.needsRedraw = true
 	r.fullRedraw = true
 }
@@ -375,18 +378,19 @@ func (r *Renderer) render() {
 	// Update viewport content width (unused for now but needed for horizontal scroll)
 	_ = r.width - r.gutterWidth
 
-	// Clear screen if full redraw
+	// Clear content area if full redraw (leaving status line area untouched)
 	if r.fullRedraw {
-		r.backend.Clear()
+		r.clearContentArea()
 	}
 
 	// Get visible line range
 	startLine, endLine := r.viewport.VisibleLineRange()
 
-	// Render each visible line
+	// Render each visible line (only within effective height, leaving room for status line)
+	effHeight := r.effectiveHeight()
 	for line := startLine; line <= endLine; line++ {
 		screenRow := r.viewport.LineToScreenRow(line)
-		if screenRow >= 0 && screenRow < r.height {
+		if screenRow >= 0 && screenRow < effHeight {
 			r.renderLine(line, screenRow)
 		}
 	}
@@ -400,7 +404,7 @@ func (r *Renderer) render() {
 
 // renderEmpty renders when there's no buffer.
 func (r *Renderer) renderEmpty() {
-	r.backend.Clear()
+	r.clearContentArea()
 	r.backend.HideCursor()
 	r.backend.Show()
 }
@@ -528,6 +532,18 @@ func (r *Renderer) clearLineContent(screenRow int) {
 	}
 }
 
+// clearContentArea clears the content area (excluding reserved bottom rows).
+// Must be called with lock held.
+func (r *Renderer) clearContentArea() {
+	empty := EmptyCell()
+	effHeight := r.effectiveHeight()
+	for y := 0; y < effHeight; y++ {
+		for x := 0; x < r.width; x++ {
+			r.backend.SetCell(x, y, empty)
+		}
+	}
+}
+
 // renderCursor renders the cursor at the current position.
 func (r *Renderer) renderCursor() {
 	if r.cursorProv == nil {
@@ -651,6 +667,37 @@ func (r *Renderer) GutterWidth() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.gutterWidth
+}
+
+// SetReservedBottom sets the number of rows reserved at the bottom.
+// This is used to leave space for status lines, command lines, etc.
+func (r *Renderer) SetReservedBottom(rows int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if rows < 0 {
+		rows = 0
+	}
+	r.reservedBottomRows = rows
+	r.viewport.Resize(r.width, r.effectiveHeight())
+	r.fullRedraw = true
+	r.needsRedraw = true
+}
+
+// ReservedBottom returns the number of rows reserved at the bottom.
+func (r *Renderer) ReservedBottom() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.reservedBottomRows
+}
+
+// effectiveHeight returns the height available for rendering (excluding reserved rows).
+// Must be called with lock held.
+func (r *Renderer) effectiveHeight() int {
+	h := r.height - r.reservedBottomRows
+	if h < 1 {
+		h = 1
+	}
+	return h
 }
 
 // ScrollToLine scrolls to make the given line visible.

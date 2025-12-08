@@ -143,13 +143,14 @@ func (b *bootstrapper) initModeManager() error {
 
 // registerModes registers the default editing modes.
 func (b *bootstrapper) registerModes() {
-	// Register placeholder modes - real modes from vim package would be registered here
-	// This allows the application to be tested without full vim implementation
-	b.app.modeManager.Register(&placeholderMode{name: "normal"})
-	b.app.modeManager.Register(&placeholderMode{name: "insert"})
-	b.app.modeManager.Register(&placeholderMode{name: "visual"})
-	b.app.modeManager.Register(&placeholderMode{name: "command"})
-	b.app.modeManager.Register(&placeholderMode{name: "replace"})
+	// Register real editing modes
+	b.app.modeManager.Register(mode.NewNormalMode())
+	b.app.modeManager.Register(mode.NewInsertMode())
+	b.app.modeManager.Register(mode.NewVisualMode())
+	b.app.modeManager.Register(mode.NewCommandMode())
+
+	// Set initial mode to normal
+	_ = b.app.modeManager.SetInitialMode(mode.ModeNormal)
 }
 
 // initDispatcher initializes the dispatcher with handlers.

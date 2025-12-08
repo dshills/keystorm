@@ -58,6 +58,111 @@ func (m *InsertMode) Exit(ctx *Context) error {
 
 // HandleUnmapped handles key events that have no explicit binding.
 func (m *InsertMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResult {
+	// Handle Escape - return to normal mode
+	if event.Key == key.KeyEscape {
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "mode.normal"},
+		}
+	}
+
+	// Handle Ctrl+C - also return to normal mode
+	if event.Key == key.KeyRune && event.Rune == 'c' && event.Modifiers.HasCtrl() {
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "mode.normal"},
+		}
+	}
+
+	// Handle Ctrl+[ - same as Escape
+	if event.Key == key.KeyRune && event.Rune == '[' && event.Modifiers.HasCtrl() {
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "mode.normal"},
+		}
+	}
+
+	// Handle Backspace
+	if event.Key == key.KeyBackspace {
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "editor.backspace"},
+		}
+	}
+
+	// Handle Delete
+	if event.Key == key.KeyDelete {
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "editor.delete_char"},
+		}
+	}
+
+	// Handle Enter
+	if event.Key == key.KeyEnter {
+		return &UnmappedResult{
+			Consumed:   true,
+			InsertText: "\n",
+			Action:     &Action{Name: "editor.newline"},
+		}
+	}
+
+	// Handle Tab
+	if event.Key == key.KeyTab {
+		return &UnmappedResult{
+			Consumed:   true,
+			InsertText: "\t",
+			Action: &Action{
+				Name: "editor.insertText",
+				Args: map[string]any{"text": "\t"},
+			},
+		}
+	}
+
+	// Handle arrow keys in insert mode
+	switch event.Key {
+	case key.KeyLeft:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "cursor.left"},
+		}
+	case key.KeyRight:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "cursor.right"},
+		}
+	case key.KeyUp:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "cursor.up"},
+		}
+	case key.KeyDown:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "cursor.down"},
+		}
+	case key.KeyHome:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "cursor.line_start"},
+		}
+	case key.KeyEnd:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "cursor.line_end"},
+		}
+	case key.KeyPageUp:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "view.page_up"},
+		}
+	case key.KeyPageDown:
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "view.page_down"},
+		}
+	}
+
 	// In insert mode, unmodified character keys are typed as text
 	if event.IsRune() && !event.IsModified() {
 		r := event.Rune

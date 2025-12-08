@@ -20,6 +20,7 @@ import (
 	"github.com/dshills/keystorm/internal/project"
 	"github.com/dshills/keystorm/internal/renderer"
 	"github.com/dshills/keystorm/internal/renderer/backend"
+	"github.com/dshills/keystorm/internal/renderer/statusline"
 )
 
 // Application is the central coordinator for all Keystorm components.
@@ -34,6 +35,7 @@ type Application struct {
 	// Editor components
 	renderer    *renderer.Renderer
 	backend     backend.Backend
+	statusLine  *statusline.StatusLine
 	modeManager *mode.Manager
 	dispatcher  *dispatcher.Dispatcher
 
@@ -140,8 +142,16 @@ func (app *Application) Run() error {
 		}
 		defer app.backend.Shutdown()
 
+		// Create status line first to know how much space to reserve
+		app.statusLine = statusline.New()
+		w, h := app.backend.Size()
+		app.statusLine.Resize(w, h)
+
 		// Create renderer with backend
 		app.renderer = renderer.New(app.backend, renderer.DefaultOptions())
+
+		// Reserve space at bottom for status line
+		app.renderer.SetReservedBottom(app.statusLine.Height())
 	}
 
 	// Wire dispatcher to active document
@@ -218,6 +228,9 @@ func (app *Application) eventLoop() error {
 				app.renderer.Update(dt)
 				app.renderer.Render()
 			}
+
+			// Render status line AFTER main renderer (so it's not overwritten)
+			app.renderStatusLine()
 		}
 	}
 
@@ -234,9 +247,65 @@ func (app *Application) updateRenderer() {
 	// Set buffer for rendering
 	app.renderer.SetBuffer(doc.Engine)
 
-	// Note: Cursor provider, mode display, file path, and modified state
-	// would be set through a status line component or separate UI layer
-	// in a full implementation. The renderer focuses on text content only.
+	// Update status line
+	app.updateStatusLine()
+}
+
+// updateStatusLine updates the status line state (but doesn't render).
+func (app *Application) updateStatusLine() {
+	if app.statusLine == nil || app.backend == nil {
+		return
+	}
+
+	// Track height before updates
+	oldHeight := app.statusLine.Height()
+
+	// Update mode
+	currentMode := app.modeManager.Current()
+	if currentMode != nil {
+		app.statusLine.SetMode(currentMode.DisplayName())
+
+		// Check if we're in command mode
+		if cmd, ok := currentMode.(*mode.CommandMode); ok {
+			app.statusLine.SetCommandMode(true, cmd.Prompt())
+			app.statusLine.SetCommandBuffer(cmd.Buffer(), cmd.CursorPos())
+		} else {
+			app.statusLine.SetCommandMode(false, ':')
+		}
+	}
+
+	// Update document info
+	doc := app.documents.Active()
+	if doc != nil {
+		app.statusLine.SetFilename(doc.Path)
+		app.statusLine.SetModified(doc.IsModified())
+		app.statusLine.SetTotalLines(doc.Engine.LineCount())
+
+		// Get cursor position if available
+		// For now, default to 1,1 - would need CursorProvider to be set
+		app.statusLine.SetPosition(1, 1)
+	}
+
+	// Update renderer's reserved space if status line height changed
+	newHeight := app.statusLine.Height()
+	if newHeight != oldHeight && app.renderer != nil {
+		app.renderer.SetReservedBottom(newHeight)
+	}
+}
+
+// renderStatusLine renders the status line at the bottom of the screen.
+func (app *Application) renderStatusLine() {
+	if app.statusLine == nil || app.backend == nil {
+		return
+	}
+
+	// Render status line at bottom of screen
+	w, height := app.backend.Size()
+	app.statusLine.Resize(w, height)
+	app.statusLine.Render(app.backend, height-1)
+
+	// Need to call Show() to flush the status line to screen
+	app.backend.Show()
 }
 
 // Shutdown initiates graceful shutdown.

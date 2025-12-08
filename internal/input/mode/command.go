@@ -69,6 +69,111 @@ func (m *CommandMode) Exit(ctx *Context) error {
 
 // HandleUnmapped handles key events that have no explicit binding.
 func (m *CommandMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResult {
+	// Handle Escape - return to normal mode without executing
+	if event.Key == key.KeyEscape {
+		m.Clear()
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "mode.normal"},
+		}
+	}
+
+	// Handle Ctrl+C - same as Escape
+	if event.Key == key.KeyRune && event.Rune == 'c' && event.Modifiers.HasCtrl() {
+		m.Clear()
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "mode.normal"},
+		}
+	}
+
+	// Handle Enter - execute command
+	if event.Key == key.KeyEnter {
+		cmd := m.Buffer()
+		m.AddToHistory(cmd)
+
+		// Parse command and return appropriate action
+		action := m.parseCommand(cmd)
+		m.Clear()
+
+		if action != nil {
+			return &UnmappedResult{
+				Consumed: true,
+				Action:   action,
+			}
+		}
+
+		// Return to normal mode after any command
+		return &UnmappedResult{
+			Consumed: true,
+			Action:   &Action{Name: "mode.normal"},
+		}
+	}
+
+	// Handle Backspace
+	if event.Key == key.KeyBackspace {
+		if len(m.buffer) == 0 {
+			// Empty buffer, return to normal mode
+			return &UnmappedResult{
+				Consumed: true,
+				Action:   &Action{Name: "mode.normal"},
+			}
+		}
+		m.Backspace()
+		return &UnmappedResult{Consumed: true}
+	}
+
+	// Handle Delete
+	if event.Key == key.KeyDelete {
+		m.Delete()
+		return &UnmappedResult{Consumed: true}
+	}
+
+	// Handle arrow keys for cursor movement
+	switch event.Key {
+	case key.KeyLeft:
+		m.MoveLeft()
+		return &UnmappedResult{Consumed: true}
+	case key.KeyRight:
+		m.MoveRight()
+		return &UnmappedResult{Consumed: true}
+	case key.KeyUp:
+		m.HistoryPrev()
+		return &UnmappedResult{Consumed: true}
+	case key.KeyDown:
+		m.HistoryNext()
+		return &UnmappedResult{Consumed: true}
+	case key.KeyHome:
+		m.MoveToStart()
+		return &UnmappedResult{Consumed: true}
+	case key.KeyEnd:
+		m.MoveToEnd()
+		return &UnmappedResult{Consumed: true}
+	}
+
+	// Handle Ctrl+A (home) and Ctrl+E (end)
+	if event.Modifiers.HasCtrl() && event.IsRune() {
+		switch event.Rune {
+		case 'a', 'A':
+			m.MoveToStart()
+			return &UnmappedResult{Consumed: true}
+		case 'e', 'E':
+			m.MoveToEnd()
+			return &UnmappedResult{Consumed: true}
+		case 'u', 'U': // Clear to beginning
+			m.buffer = m.buffer[m.cursorPos:]
+			m.cursorPos = 0
+			return &UnmappedResult{Consumed: true}
+		case 'k', 'K': // Clear to end
+			m.buffer = m.buffer[:m.cursorPos]
+			return &UnmappedResult{Consumed: true}
+		case 'w', 'W': // Delete word before cursor
+			// Simplified: just delete one character
+			m.Backspace()
+			return &UnmappedResult{Consumed: true}
+		}
+	}
+
 	// Handle character input
 	if event.IsRune() && !event.IsModified() {
 		r := event.Rune
@@ -85,6 +190,111 @@ func (m *CommandMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedRes
 	}
 
 	return &UnmappedResult{Consumed: false}
+}
+
+// parseCommand parses a command string and returns the appropriate action.
+func (m *CommandMode) parseCommand(cmd string) *Action {
+	// Simple command parsing
+	switch cmd {
+	case "q", "quit":
+		return &Action{Name: "app.quit"}
+	case "q!", "quit!":
+		return &Action{Name: "app.quit", Args: map[string]any{"force": true}}
+	case "w", "write":
+		return &Action{Name: "file.save"}
+	case "wq", "x":
+		return &Action{Name: "file.save_and_quit"}
+	case "wa", "wall":
+		return &Action{Name: "file.save_all"}
+	case "qa", "qall":
+		return &Action{Name: "app.quit_all"}
+	case "qa!", "qall!":
+		return &Action{Name: "app.quit_all", Args: map[string]any{"force": true}}
+	case "e", "edit":
+		return &Action{Name: "file.edit"}
+	case "bn", "bnext":
+		return &Action{Name: "buffer.next"}
+	case "bp", "bprev":
+		return &Action{Name: "buffer.prev"}
+	case "bd", "bdelete":
+		return &Action{Name: "buffer.delete"}
+	case "ls", "buffers":
+		return &Action{Name: "buffer.list"}
+	case "sp", "split":
+		return &Action{Name: "window.split_horizontal"}
+	case "vs", "vsplit":
+		return &Action{Name: "window.split_vertical"}
+	case "only":
+		return &Action{Name: "window.close_others"}
+	case "close":
+		return &Action{Name: "window.close"}
+	case "tabnew":
+		return &Action{Name: "tab.new"}
+	case "tabc", "tabclose":
+		return &Action{Name: "tab.close"}
+	case "tabn", "tabnext":
+		return &Action{Name: "tab.next"}
+	case "tabp", "tabprev":
+		return &Action{Name: "tab.prev"}
+	case "noh", "nohlsearch":
+		return &Action{Name: "search.clear_highlight"}
+	case "set":
+		return &Action{Name: "settings.show"}
+	}
+
+	// Handle commands with arguments
+	if len(cmd) > 0 {
+		// :N - go to line N
+		if cmd[0] >= '0' && cmd[0] <= '9' {
+			return &Action{
+				Name: "cursor.go_to_line",
+				Args: map[string]any{"line": cmd},
+			}
+		}
+
+		// :w filename - write to file
+		if len(cmd) > 2 && cmd[0] == 'w' && cmd[1] == ' ' {
+			return &Action{
+				Name: "file.save_as",
+				Args: map[string]any{"path": cmd[2:]},
+			}
+		}
+
+		// :e filename - edit file
+		if len(cmd) > 2 && cmd[0] == 'e' && cmd[1] == ' ' {
+			return &Action{
+				Name: "file.open",
+				Args: map[string]any{"path": cmd[2:]},
+			}
+		}
+
+		// :s/pattern/replacement/ - substitute (simplified)
+		if cmd[0] == 's' && len(cmd) > 1 && cmd[1] == '/' {
+			return &Action{
+				Name: "search.substitute",
+				Args: map[string]any{"command": cmd},
+			}
+		}
+
+		// /pattern - search forward
+		if cmd[0] == '/' {
+			return &Action{
+				Name: "search.forward",
+				Args: map[string]any{"pattern": cmd[1:]},
+			}
+		}
+
+		// ?pattern - search backward
+		if cmd[0] == '?' {
+			return &Action{
+				Name: "search.backward",
+				Args: map[string]any{"pattern": cmd[1:]},
+			}
+		}
+	}
+
+	// Unknown command
+	return nil
 }
 
 // insertRune inserts a character at the cursor position.
