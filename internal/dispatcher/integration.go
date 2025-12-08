@@ -9,6 +9,7 @@ import (
 	"github.com/dshills/keystorm/internal/dispatcher/handlers/cursor"
 	"github.com/dshills/keystorm/internal/dispatcher/handlers/editor"
 	"github.com/dshills/keystorm/internal/dispatcher/handlers/file"
+	inthandlers "github.com/dshills/keystorm/internal/dispatcher/handlers/integration"
 	"github.com/dshills/keystorm/internal/dispatcher/handlers/macro"
 	"github.com/dshills/keystorm/internal/dispatcher/handlers/mode"
 	"github.com/dshills/keystorm/internal/dispatcher/handlers/operator"
@@ -17,6 +18,7 @@ import (
 	"github.com/dshills/keystorm/internal/dispatcher/handlers/window"
 	"github.com/dshills/keystorm/internal/dispatcher/hook"
 	"github.com/dshills/keystorm/internal/input"
+	"github.com/dshills/keystorm/internal/integration"
 )
 
 // System provides a unified facade for the dispatcher subsystem.
@@ -49,8 +51,16 @@ type System struct {
 	completionHandler *completion.Handler
 	macroHandler      *macro.Handler
 
+	// Integration handlers
+	gitHandler   *inthandlers.GitHandler
+	taskHandler  *inthandlers.TaskHandler
+	debugHandler *inthandlers.DebugHandler
+
 	// Macro recorder (shared between handler and system)
 	macroRecorder *macro.DefaultMacroRecorder
+
+	// Event publishing for integration events
+	eventPublisher integration.EventPublisher
 
 	// Context pool for performance
 	contextPool *sync.Pool
@@ -167,6 +177,11 @@ func (s *System) initializeHandlers(config SystemConfig) {
 	s.windowHandler = window.NewHandler()
 	s.completionHandler = completion.NewHandler()
 	s.macroHandler = macro.NewHandlerWithRecorder(s.macroRecorder)
+
+	// Integration handlers (managers can be set later via SetGitManager, etc.)
+	s.gitHandler = inthandlers.NewGitHandler()
+	s.taskHandler = inthandlers.NewTaskHandler()
+	s.debugHandler = inthandlers.NewDebugHandler()
 }
 
 // registerHandlers registers all handlers with the dispatcher.
@@ -185,6 +200,11 @@ func (s *System) registerHandlers() {
 	router.RegisterNamespace("window", s.windowHandler)
 	router.RegisterNamespace("completion", s.completionHandler)
 	router.RegisterNamespace("macro", s.macroHandler)
+
+	// Register integration handlers
+	router.RegisterNamespace("git", s.gitHandler)
+	router.RegisterNamespace("task", s.taskHandler)
+	router.RegisterNamespace("debug", s.debugHandler)
 
 	// Register additional editor handlers for specific actions
 	// Delete, yank, indent share the "editor" namespace so we register by action
@@ -576,4 +596,95 @@ func (s *System) Stats() SystemStats {
 	}
 
 	return stats
+}
+
+// GitHandler returns the git handler for direct configuration.
+// The returned handler should not be retained across SetGitManager calls.
+func (s *System) GitHandler() *inthandlers.GitHandler {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.gitHandler
+}
+
+// TaskHandler returns the task handler for direct configuration.
+// The returned handler should not be retained across SetTaskManager/SetTaskComponents calls.
+func (s *System) TaskHandler() *inthandlers.TaskHandler {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.taskHandler
+}
+
+// DebugHandler returns the debug handler for direct configuration.
+// The returned handler should not be retained across SetDebugManager calls.
+func (s *System) DebugHandler() *inthandlers.DebugHandler {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.debugHandler
+}
+
+// SetGitManager sets the git manager for the git handler.
+// The handler is updated in-place to preserve router registration.
+func (s *System) SetGitManager(manager inthandlers.GitManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.gitHandler != nil {
+		s.gitHandler.SetManager(manager)
+	}
+}
+
+// SetTaskManager sets the task manager for the task handler.
+// The handler is updated in-place to preserve router registration.
+func (s *System) SetTaskManager(manager inthandlers.TaskManager, workspace string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.taskHandler != nil {
+		s.taskHandler.SetManager(manager, workspace)
+	}
+}
+
+// SetTaskComponents sets separate task discoverer and executor.
+// The handler is updated in-place to preserve router registration.
+func (s *System) SetTaskComponents(discoverer inthandlers.TaskDiscoverer, executor inthandlers.TaskExecutor, workspace string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.taskHandler != nil {
+		s.taskHandler.SetComponents(discoverer, executor, workspace)
+	}
+}
+
+// SetDebugManager sets the debug manager for the debug handler.
+// The handler is updated in-place to preserve router registration.
+func (s *System) SetDebugManager(manager inthandlers.DebugManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.debugHandler != nil {
+		s.debugHandler.SetManager(manager)
+	}
+}
+
+// EventPublisher returns the event publisher for integration events.
+// May return nil if no publisher was set.
+func (s *System) EventPublisher() integration.EventPublisher {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.eventPublisher
+}
+
+// SetEventPublisher sets the event publisher for integration events.
+// Events will be published when integration actions are dispatched.
+func (s *System) SetEventPublisher(pub integration.EventPublisher) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventPublisher = pub
+}
+
+// PublishEvent publishes an event if an event publisher is configured.
+func (s *System) PublishEvent(eventType string, data map[string]any) {
+	s.mu.RLock()
+	pub := s.eventPublisher
+	s.mu.RUnlock()
+
+	if pub != nil {
+		pub.Publish(eventType, data)
+	}
 }

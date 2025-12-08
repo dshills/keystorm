@@ -78,6 +78,22 @@ func NewTaskHandlerWithComponents(discoverer TaskDiscoverer, executor TaskExecut
 	}
 }
 
+// SetManager updates the task manager.
+// This allows in-place configuration updates without replacing the handler.
+func (h *TaskHandler) SetManager(manager TaskManager, workspace string) {
+	h.discoverer = manager
+	h.executor = manager
+	h.workspace = workspace
+}
+
+// SetComponents updates the task discoverer and executor.
+// This allows in-place configuration updates without replacing the handler.
+func (h *TaskHandler) SetComponents(discoverer TaskDiscoverer, executor TaskExecutor, workspace string) {
+	h.discoverer = discoverer
+	h.executor = executor
+	h.workspace = workspace
+}
+
 // Namespace returns the task namespace.
 func (h *TaskHandler) Namespace() string {
 	return "task"

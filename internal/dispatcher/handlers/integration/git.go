@@ -89,6 +89,12 @@ func NewGitHandlerWithManager(manager GitManager) *GitHandler {
 	return &GitHandler{manager: manager}
 }
 
+// SetManager updates the git manager.
+// This allows in-place configuration updates without replacing the handler.
+func (h *GitHandler) SetManager(manager GitManager) {
+	h.manager = manager
+}
+
 // Namespace returns the git namespace.
 func (h *GitHandler) Namespace() string {
 	return "git"

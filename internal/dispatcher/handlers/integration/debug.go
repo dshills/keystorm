@@ -109,6 +109,12 @@ func NewDebugHandlerWithManager(manager DebugManager) *DebugHandler {
 	return &DebugHandler{manager: manager}
 }
 
+// SetManager updates the debug manager.
+// This allows in-place configuration updates without replacing the handler.
+func (h *DebugHandler) SetManager(manager DebugManager) {
+	h.manager = manager
+}
+
 // Namespace returns the debug namespace.
 func (h *DebugHandler) Namespace() string {
 	return "debug"

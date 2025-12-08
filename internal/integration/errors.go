@@ -30,4 +30,13 @@ var (
 
 	// ErrWorkspaceNotSet is returned when workspace root is required but not set.
 	ErrWorkspaceNotSet = errors.New("workspace root not set")
+
+	// ErrSessionNotFound is returned when a debug session is not found.
+	ErrSessionNotFound = errors.New("debug session not found")
+
+	// ErrTaskNotFound is returned when a task is not found.
+	ErrTaskNotFound = errors.New("task not found")
+
+	// ErrAdapterClosed is returned when operations are attempted on a closed adapter.
+	ErrAdapterClosed = errors.New("adapter is closed")
 )
