@@ -8,6 +8,7 @@ import (
 
 	"github.com/dshills/keystorm/internal/engine"
 	"github.com/dshills/keystorm/internal/lsp"
+	"github.com/dshills/keystorm/internal/renderer"
 )
 
 // Document represents an open file with its associated editor state.
@@ -371,7 +372,7 @@ func scratchKey(n int) string {
 	return "::scratch::" + itoa(n)
 }
 
-// itoa converts int to string without fmt.
+// scratchKey generates a key for scratch buffers.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
@@ -384,4 +385,54 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
+}
+
+// DocumentCursorProvider implements renderer.CursorProvider for a document.
+// It adapts the engine's cursor position to the renderer's expected interface.
+type DocumentCursorProvider struct {
+	dm *DocumentManager
+}
+
+// NewDocumentCursorProvider creates a cursor provider for the document manager.
+func NewDocumentCursorProvider(dm *DocumentManager) *DocumentCursorProvider {
+	return &DocumentCursorProvider{dm: dm}
+}
+
+// PrimaryCursor returns the primary cursor position as (line, column).
+func (p *DocumentCursorProvider) PrimaryCursor() (line uint32, col uint32) {
+	doc := p.dm.Active()
+	if doc == nil || doc.Engine == nil {
+		return 0, 0
+	}
+
+	offset := doc.Engine.PrimaryCursor()
+	point := doc.Engine.OffsetToPoint(engine.ByteOffset(offset))
+	return point.Line, point.Column
+}
+
+// Selections returns all active selections for rendering.
+func (p *DocumentCursorProvider) Selections() []renderer.Selection {
+	doc := p.dm.Active()
+	if doc == nil || doc.Engine == nil {
+		return nil
+	}
+
+	// Get primary selection
+	sel := doc.Engine.PrimarySelection()
+	if sel.IsEmpty() {
+		return nil
+	}
+
+	startPoint := doc.Engine.OffsetToPoint(engine.ByteOffset(sel.Start()))
+	endPoint := doc.Engine.OffsetToPoint(engine.ByteOffset(sel.End()))
+
+	return []renderer.Selection{
+		{
+			StartLine: startPoint.Line,
+			StartCol:  startPoint.Column,
+			EndLine:   endPoint.Line,
+			EndCol:    endPoint.Column,
+			IsPrimary: true,
+		},
+	}
 }

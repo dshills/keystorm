@@ -282,6 +282,23 @@ func (app *Application) processModeResult(result *mode.UnmappedResult, _ key.Eve
 			Args: convertModeArgs(result.Action.Args),
 		}
 
+		// If InsertText is set and action.Args.Text is empty, use InsertText
+		if result.InsertText != "" && action.Args.Text == "" {
+			action.Args.Text = result.InsertText
+		}
+
+		// Extract count from args if present
+		if result.Action.Args != nil {
+			if countVal, ok := result.Action.Args["count"]; ok {
+				switch c := countVal.(type) {
+				case int:
+					action.Count = c
+				case float64:
+					action.Count = int(c)
+				}
+			}
+		}
+
 		// Check for mode change action
 		if action.Name == "mode.normal" || action.Name == "mode.insert" ||
 			action.Name == "mode.visual" || action.Name == "mode.command" ||
@@ -307,12 +324,34 @@ func (app *Application) processModeResult(result *mode.UnmappedResult, _ key.Eve
 // convertModeArgs converts mode.Action.Args to input.ActionArgs.
 func convertModeArgs(args map[string]any) input.ActionArgs {
 	result := input.ActionArgs{}
-	if args != nil {
-		result.Extra = make(map[string]interface{})
-		for k, v := range args {
-			result.Extra[k] = v
-		}
+	if args == nil {
+		return result
 	}
+
+	// Handle known fields explicitly
+	if text, ok := args["text"].(string); ok {
+		result.Text = text
+	}
+	if register, ok := args["register"].(rune); ok {
+		result.Register = register
+	} else if registerStr, ok := args["register"].(string); ok && len(registerStr) > 0 {
+		result.Register = rune(registerStr[0])
+	}
+	if pattern, ok := args["searchPattern"].(string); ok {
+		result.SearchPattern = pattern
+	}
+
+	// Put remaining args in Extra
+	result.Extra = make(map[string]interface{})
+	for k, v := range args {
+		// Skip known fields that were already handled
+		switch k {
+		case "text", "register", "searchPattern", "count":
+			continue
+		}
+		result.Extra[k] = v
+	}
+
 	return result
 }
 
@@ -348,6 +387,12 @@ func (app *Application) insertText(text string) error {
 func (app *Application) dispatchAction(action *input.Action) error {
 	if app.dispatcher == nil || action == nil {
 		return nil
+	}
+
+	// Wire up the dispatcher with current document's adapters
+	doc := app.documents.Active()
+	if doc != nil {
+		app.wireDispatcherContext(doc)
 	}
 
 	// Build input context

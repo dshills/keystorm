@@ -668,8 +668,8 @@ func TestLoadDefaults(t *testing.T) {
 	if binding == nil {
 		t.Fatal("Should find 'j' binding in normal mode")
 	}
-	if binding.Action != "cursor.down" {
-		t.Errorf("'j' action = %q, want %q", binding.Action, "cursor.down")
+	if binding.Action != "cursor.moveDown" {
+		t.Errorf("'j' action = %q, want %q", binding.Action, "cursor.moveDown")
 	}
 
 	// Check multi-key binding
@@ -678,8 +678,8 @@ func TestLoadDefaults(t *testing.T) {
 	if binding == nil {
 		t.Fatal("Should find 'g g' binding in normal mode")
 	}
-	if binding.Action != "cursor.documentStart" {
-		t.Errorf("'g g' action = %q, want %q", binding.Action, "cursor.documentStart")
+	if binding.Action != "cursor.moveFirstLine" {
+		t.Errorf("'g g' action = %q, want %q", binding.Action, "cursor.moveFirstLine")
 	}
 
 	// Check insert mode bindings

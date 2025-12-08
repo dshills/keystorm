@@ -354,12 +354,30 @@ func (app *Application) WireDispatcher() {
 		return
 	}
 
-	// Note: Engine and cursor wiring requires adapters to bridge interface types.
-	// The engine.Engine has methods with different signatures than what
-	// execctx.EngineInterface expects (e.g., Delete returns error vs EditResult).
-	// This will be addressed in Phase 3 (handler integration).
-	// TODO: Create engine/cursor adapters in Phase 3
-	_ = doc // Suppress unused warning
+	// Wire engine adapter
+	engineAdapter := NewEngineExecAdapter(doc.Engine)
+	app.dispatcher.SetEngine(engineAdapter)
+
+	// Wire cursor adapter (passes engine so changes sync back)
+	cursorAdapter := NewCursorManagerAdapter(doc.Engine)
+	app.dispatcher.SetCursors(cursorAdapter)
+
+	// Wire mode manager adapter
+	if app.modeManager != nil {
+		modeAdapter := NewModeExecAdapter(app.modeManager)
+		app.dispatcher.SetModeManager(modeAdapter)
+	}
+
+	// Wire history adapter
+	historyAdapter := NewHistoryAdapter(doc.Engine)
+	app.dispatcher.SetHistory(historyAdapter)
+
+	// Wire renderer adapter if available
+	if app.renderer != nil {
+		rendererWrapper := NewRendererExecWrapper(app.renderer)
+		rendererAdapter := NewRendererAdapter(rendererWrapper)
+		app.dispatcher.SetRenderer(rendererAdapter)
+	}
 }
 
 // SwitchDocument changes the active document and re-wires the dispatcher.

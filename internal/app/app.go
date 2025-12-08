@@ -152,6 +152,15 @@ func (app *Application) Run() error {
 
 		// Reserve space at bottom for status line
 		app.renderer.SetReservedBottom(app.statusLine.Height())
+
+		// Wire cursor provider to renderer so cursor is visible
+		cursorProvider := NewDocumentCursorProvider(app.documents)
+		app.renderer.SetCursorProvider(cursorProvider)
+
+		// Set initial buffer for rendering
+		if doc := app.documents.Active(); doc != nil {
+			app.renderer.SetBuffer(doc.Engine)
+		}
 	}
 
 	// Wire dispatcher to active document

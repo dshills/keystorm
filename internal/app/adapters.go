@@ -157,29 +157,63 @@ func (r *engineReaderAdapter) PointToOffset(p buffer.Point) buffer.ByteOffset {
 }
 
 // CursorManagerAdapter adapts cursor.CursorSet to execctx.CursorManagerInterface.
+// It holds a reference to the engine so cursor modifications can be synced back.
+//
+// NOTE: engine.Cursors() returns a clone of the cursor set for thread safety.
+// This adapter works on that clone and syncs changes back via SetCursors()
+// after each mutating operation. SetCursors() also clones internally,
+// maintaining the engine's thread-safety invariant.
 type CursorManagerAdapter struct {
+	eng     *engine.Engine
 	cursors *cursor.CursorSet
 }
 
 // NewCursorManagerAdapter creates a new cursor manager adapter.
-func NewCursorManagerAdapter(cursors *cursor.CursorSet) *CursorManagerAdapter {
-	return &CursorManagerAdapter{cursors: cursors}
+// It receives the engine to allow syncing cursor changes back.
+func NewCursorManagerAdapter(eng *engine.Engine) *CursorManagerAdapter {
+	return &CursorManagerAdapter{
+		eng:     eng,
+		cursors: eng.Cursors(), // Gets a clone for local modifications
+	}
 }
 
-func (a *CursorManagerAdapter) Primary() cursor.Selection       { return a.cursors.Primary() }
-func (a *CursorManagerAdapter) SetPrimary(sel cursor.Selection) { a.cursors.SetPrimary(sel) }
-func (a *CursorManagerAdapter) All() []cursor.Selection         { return a.cursors.All() }
-func (a *CursorManagerAdapter) Add(sel cursor.Selection)        { a.cursors.Add(sel) }
-func (a *CursorManagerAdapter) Clear()                          { a.cursors.Clear() }
-func (a *CursorManagerAdapter) Count() int                      { return a.cursors.Count() }
-func (a *CursorManagerAdapter) IsMulti() bool                   { return a.cursors.IsMulti() }
-func (a *CursorManagerAdapter) HasSelection() bool              { return a.cursors.HasSelection() }
-func (a *CursorManagerAdapter) SetAll(sels []cursor.Selection)  { a.cursors.SetAll(sels) }
+func (a *CursorManagerAdapter) Primary() cursor.Selection { return a.cursors.Primary() }
+func (a *CursorManagerAdapter) SetPrimary(sel cursor.Selection) {
+	a.cursors.SetPrimary(sel)
+	a.syncToEngine()
+}
+func (a *CursorManagerAdapter) All() []cursor.Selection { return a.cursors.All() }
+func (a *CursorManagerAdapter) Add(sel cursor.Selection) {
+	a.cursors.Add(sel)
+	a.syncToEngine()
+}
+func (a *CursorManagerAdapter) Clear() {
+	a.cursors.Clear()
+	a.syncToEngine()
+}
+func (a *CursorManagerAdapter) Count() int         { return a.cursors.Count() }
+func (a *CursorManagerAdapter) IsMulti() bool      { return a.cursors.IsMulti() }
+func (a *CursorManagerAdapter) HasSelection() bool { return a.cursors.HasSelection() }
+func (a *CursorManagerAdapter) SetAll(sels []cursor.Selection) {
+	a.cursors.SetAll(sels)
+	a.syncToEngine()
+}
 func (a *CursorManagerAdapter) MapInPlace(f func(sel cursor.Selection) cursor.Selection) {
 	a.cursors.MapInPlace(f)
+	a.syncToEngine()
 }
-func (a *CursorManagerAdapter) Clone() *cursor.CursorSet          { return a.cursors.Clone() }
-func (a *CursorManagerAdapter) Clamp(maxOffset cursor.ByteOffset) { a.cursors.Clamp(maxOffset) }
+func (a *CursorManagerAdapter) Clone() *cursor.CursorSet { return a.cursors.Clone() }
+func (a *CursorManagerAdapter) Clamp(maxOffset cursor.ByteOffset) {
+	a.cursors.Clamp(maxOffset)
+	a.syncToEngine()
+}
+
+// syncToEngine writes the cursor set back to the engine.
+func (a *CursorManagerAdapter) syncToEngine() {
+	if a.eng != nil {
+		a.eng.SetCursors(a.cursors)
+	}
+}
 
 // ModeExecAdapter adapts mode.Manager to execctx.ModeManagerInterface.
 type ModeExecAdapter struct {
@@ -320,6 +354,7 @@ type RendererAdapter struct {
 }
 
 // RendererInterface defines the renderer methods we need.
+// This interface is satisfied by *renderer.RendererExecWrapper.
 type RendererInterface interface {
 	ScrollTo(line, col uint32)
 	CenterOnLine(line uint32)
@@ -372,3 +407,58 @@ func (NullRenderer) CenterOnLine(line uint32)              {}
 func (NullRenderer) Redraw()                               {}
 func (NullRenderer) RedrawLines(lines []uint32)            {}
 func (NullRenderer) VisibleLineRange() (start, end uint32) { return 0, 100 }
+
+// RendererExecWrapper wraps a renderer.Renderer to implement RendererInterface.
+// Uses minimal interface to avoid coupling to specific renderer implementation.
+type RendererExecWrapper struct {
+	scroller interface {
+		ScrollToReveal(line uint32, col int, smooth bool)
+		CenterOnLine(line uint32, smooth bool)
+	}
+	dirtyer interface {
+		MarkDirty()
+	}
+}
+
+// NewRendererExecWrapper creates a wrapper that adapts the renderer.
+func NewRendererExecWrapper(r interface {
+	ScrollToReveal(line uint32, col int, smooth bool)
+	CenterOnLine(line uint32, smooth bool)
+	MarkDirty()
+}) *RendererExecWrapper {
+	return &RendererExecWrapper{
+		scroller: r,
+		dirtyer:  r,
+	}
+}
+
+func (w *RendererExecWrapper) ScrollTo(line, col uint32) {
+	if w.scroller != nil {
+		w.scroller.ScrollToReveal(line, int(col), false)
+	}
+}
+
+func (w *RendererExecWrapper) CenterOnLine(line uint32) {
+	if w.scroller != nil {
+		w.scroller.CenterOnLine(line, false)
+	}
+}
+
+func (w *RendererExecWrapper) Redraw() {
+	if w.dirtyer != nil {
+		w.dirtyer.MarkDirty()
+	}
+}
+
+func (w *RendererExecWrapper) RedrawLines(lines []uint32) {
+	// Simplified: just mark dirty for now
+	if w.dirtyer != nil {
+		w.dirtyer.MarkDirty()
+	}
+}
+
+func (w *RendererExecWrapper) VisibleLineRange() (start, end uint32) {
+	// TODO: Need to expose viewport's VisibleLineRange on Renderer
+	// For now, return a reasonable default
+	return 0, 100
+}

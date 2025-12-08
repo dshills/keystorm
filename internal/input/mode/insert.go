@@ -86,7 +86,7 @@ func (m *InsertMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 	if event.Key == key.KeyBackspace {
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "editor.backspace"},
+			Action:   &Action{Name: "editor.deleteCharBack"},
 		}
 	}
 
@@ -94,7 +94,7 @@ func (m *InsertMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 	if event.Key == key.KeyDelete {
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "editor.delete_char"},
+			Action:   &Action{Name: "editor.deleteChar"},
 		}
 	}
 
@@ -103,7 +103,7 @@ func (m *InsertMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 		return &UnmappedResult{
 			Consumed:   true,
 			InsertText: "\n",
-			Action:     &Action{Name: "editor.newline"},
+			Action:     &Action{Name: "editor.insertNewline"},
 		}
 	}
 
@@ -124,32 +124,32 @@ func (m *InsertMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 	case key.KeyLeft:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.left"},
+			Action:   &Action{Name: "cursor.moveLeft"},
 		}
 	case key.KeyRight:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.right"},
+			Action:   &Action{Name: "cursor.moveRight"},
 		}
 	case key.KeyUp:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.up"},
+			Action:   &Action{Name: "cursor.moveUp"},
 		}
 	case key.KeyDown:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.down"},
+			Action:   &Action{Name: "cursor.moveDown"},
 		}
 	case key.KeyHome:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.line_start"},
+			Action:   &Action{Name: "cursor.moveLineStart"},
 		}
 	case key.KeyEnd:
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.line_end"},
+			Action:   &Action{Name: "cursor.moveLineEnd"},
 		}
 	case key.KeyPageUp:
 		return &UnmappedResult{

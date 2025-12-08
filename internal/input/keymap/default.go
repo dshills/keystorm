@@ -29,33 +29,33 @@ func DefaultNormalKeymap() *Keymap {
 		Source: "default",
 		Bindings: []Binding{
 			// Movement - basic
-			{Keys: "h", Action: "cursor.left", Description: "Move left", Category: "Movement"},
-			{Keys: "j", Action: "cursor.down", Description: "Move down", Category: "Movement"},
-			{Keys: "k", Action: "cursor.up", Description: "Move up", Category: "Movement"},
-			{Keys: "l", Action: "cursor.right", Description: "Move right", Category: "Movement"},
+			{Keys: "h", Action: "cursor.moveLeft", Description: "Move left", Category: "Movement"},
+			{Keys: "j", Action: "cursor.moveDown", Description: "Move down", Category: "Movement"},
+			{Keys: "k", Action: "cursor.moveUp", Description: "Move up", Category: "Movement"},
+			{Keys: "l", Action: "cursor.moveRight", Description: "Move right", Category: "Movement"},
 
 			// Movement - words
-			{Keys: "w", Action: "cursor.wordForward", Description: "Move to next word", Category: "Movement"},
-			{Keys: "W", Action: "cursor.WORDForward", Description: "Move to next WORD", Category: "Movement"},
-			{Keys: "b", Action: "cursor.wordBackward", Description: "Move to previous word", Category: "Movement"},
-			{Keys: "B", Action: "cursor.WORDBackward", Description: "Move to previous WORD", Category: "Movement"},
-			{Keys: "e", Action: "cursor.wordEnd", Description: "Move to end of word", Category: "Movement"},
-			{Keys: "E", Action: "cursor.WORDEnd", Description: "Move to end of WORD", Category: "Movement"},
-			{Keys: "g e", Action: "cursor.wordEndBackward", Description: "Move to end of previous word", Category: "Movement"},
+			{Keys: "w", Action: "motion.wordForward", Description: "Move to next word", Category: "Movement"},
+			{Keys: "W", Action: "motion.WORDForward", Description: "Move to next WORD", Category: "Movement"},
+			{Keys: "b", Action: "motion.wordBackward", Description: "Move to previous word", Category: "Movement"},
+			{Keys: "B", Action: "motion.WORDBackward", Description: "Move to previous WORD", Category: "Movement"},
+			{Keys: "e", Action: "motion.wordEnd", Description: "Move to end of word", Category: "Movement"},
+			{Keys: "E", Action: "motion.WORDEnd", Description: "Move to end of WORD", Category: "Movement"},
+			{Keys: "g e", Action: "motion.wordEndBackward", Description: "Move to end of previous word", Category: "Movement"},
 
 			// Movement - line
-			{Keys: "0", Action: "cursor.lineStart", Description: "Move to line start", Category: "Movement"},
-			{Keys: "$", Action: "cursor.lineEnd", Description: "Move to line end", Category: "Movement"},
-			{Keys: "^", Action: "cursor.firstNonBlank", Description: "Move to first non-blank", Category: "Movement"},
-			{Keys: "g _", Action: "cursor.lastNonBlank", Description: "Move to last non-blank", Category: "Movement"},
-			{Keys: "|", Action: "cursor.column", Description: "Move to column", Category: "Movement"},
+			{Keys: "0", Action: "cursor.moveLineStart", Description: "Move to line start", Category: "Movement"},
+			{Keys: "$", Action: "cursor.moveLineEnd", Description: "Move to line end", Category: "Movement"},
+			{Keys: "^", Action: "motion.firstNonBlank", Description: "Move to first non-blank", Category: "Movement"},
+			{Keys: "g _", Action: "motion.lastNonBlank", Description: "Move to last non-blank", Category: "Movement"},
+			{Keys: "|", Action: "motion.column", Description: "Move to column", Category: "Movement"},
 
 			// Movement - document
-			{Keys: "g g", Action: "cursor.documentStart", Description: "Go to document start", Category: "Movement"},
-			{Keys: "G", Action: "cursor.documentEnd", Description: "Go to document end", Category: "Movement"},
-			{Keys: "H", Action: "cursor.screenTop", Description: "Move to top of screen", Category: "Movement"},
-			{Keys: "M", Action: "cursor.screenMiddle", Description: "Move to middle of screen", Category: "Movement"},
-			{Keys: "L", Action: "cursor.screenBottom", Description: "Move to bottom of screen", Category: "Movement"},
+			{Keys: "g g", Action: "cursor.moveFirstLine", Description: "Go to document start", Category: "Movement"},
+			{Keys: "G", Action: "cursor.moveLastLine", Description: "Go to document end", Category: "Movement"},
+			{Keys: "H", Action: "motion.screenTop", Description: "Move to top of screen", Category: "Movement"},
+			{Keys: "M", Action: "motion.screenMiddle", Description: "Move to middle of screen", Category: "Movement"},
+			{Keys: "L", Action: "motion.screenBottom", Description: "Move to bottom of screen", Category: "Movement"},
 
 			// Movement - search
 			{Keys: "f", Action: "cursor.findForward", Description: "Find char forward", Category: "Movement"},
@@ -219,12 +219,12 @@ func DefaultInsertKeymap() *Keymap {
 			{Keys: "C-o", Action: "mode.insertNormalOnce", Description: "Execute one normal command", Category: "Mode"},
 
 			// Navigation (for convenience)
-			{Keys: "Left", Action: "cursor.left", Description: "Move left", Category: "Navigation"},
-			{Keys: "Right", Action: "cursor.right", Description: "Move right", Category: "Navigation"},
-			{Keys: "Up", Action: "cursor.up", Description: "Move up", Category: "Navigation"},
-			{Keys: "Down", Action: "cursor.down", Description: "Move down", Category: "Navigation"},
-			{Keys: "Home", Action: "cursor.lineStart", Description: "Move to line start", Category: "Navigation"},
-			{Keys: "End", Action: "cursor.lineEnd", Description: "Move to line end", Category: "Navigation"},
+			{Keys: "Left", Action: "cursor.moveLeft", Description: "Move left", Category: "Navigation"},
+			{Keys: "Right", Action: "cursor.moveRight", Description: "Move right", Category: "Navigation"},
+			{Keys: "Up", Action: "cursor.moveUp", Description: "Move up", Category: "Navigation"},
+			{Keys: "Down", Action: "cursor.moveDown", Description: "Move down", Category: "Navigation"},
+			{Keys: "Home", Action: "cursor.moveLineStart", Description: "Move to line start", Category: "Navigation"},
+			{Keys: "End", Action: "cursor.moveLineEnd", Description: "Move to line end", Category: "Navigation"},
 		},
 	}
 }
@@ -277,19 +277,19 @@ func DefaultVisualKeymap() *Keymap {
 			{Keys: "r", Action: "editor.replaceSelection", Description: "Replace with character", Category: "Editing"},
 
 			// Movement keys work the same as normal mode
-			{Keys: "h", Action: "cursor.left", Description: "Extend left", Category: "Movement"},
-			{Keys: "j", Action: "cursor.down", Description: "Extend down", Category: "Movement"},
-			{Keys: "k", Action: "cursor.up", Description: "Extend up", Category: "Movement"},
-			{Keys: "l", Action: "cursor.right", Description: "Extend right", Category: "Movement"},
-			{Keys: "w", Action: "cursor.wordForward", Description: "Extend to next word", Category: "Movement"},
-			{Keys: "b", Action: "cursor.wordBackward", Description: "Extend to previous word", Category: "Movement"},
-			{Keys: "e", Action: "cursor.wordEnd", Description: "Extend to word end", Category: "Movement"},
-			{Keys: "0", Action: "cursor.lineStart", Description: "Extend to line start", Category: "Movement"},
-			{Keys: "$", Action: "cursor.lineEnd", Description: "Extend to line end", Category: "Movement"},
-			{Keys: "^", Action: "cursor.firstNonBlank", Description: "Extend to first non-blank", Category: "Movement"},
-			{Keys: "g g", Action: "cursor.documentStart", Description: "Extend to document start", Category: "Movement"},
-			{Keys: "G", Action: "cursor.documentEnd", Description: "Extend to document end", Category: "Movement"},
-			{Keys: "%", Action: "cursor.matchingBracket", Description: "Extend to matching bracket", Category: "Movement"},
+			{Keys: "h", Action: "cursor.moveLeft", Description: "Extend left", Category: "Movement"},
+			{Keys: "j", Action: "cursor.moveDown", Description: "Extend down", Category: "Movement"},
+			{Keys: "k", Action: "cursor.moveUp", Description: "Extend up", Category: "Movement"},
+			{Keys: "l", Action: "cursor.moveRight", Description: "Extend right", Category: "Movement"},
+			{Keys: "w", Action: "cursor.moveWordForward", Description: "Extend to next word", Category: "Movement"},
+			{Keys: "b", Action: "cursor.moveWordBackward", Description: "Extend to previous word", Category: "Movement"},
+			{Keys: "e", Action: "cursor.moveWordEnd", Description: "Extend to word end", Category: "Movement"},
+			{Keys: "0", Action: "cursor.moveLineStart", Description: "Extend to line start", Category: "Movement"},
+			{Keys: "$", Action: "cursor.moveLineEnd", Description: "Extend to line end", Category: "Movement"},
+			{Keys: "^", Action: "cursor.moveFirstNonBlank", Description: "Extend to first non-blank", Category: "Movement"},
+			{Keys: "g g", Action: "cursor.moveFirstLine", Description: "Extend to document start", Category: "Movement"},
+			{Keys: "G", Action: "cursor.moveLastLine", Description: "Extend to document end", Category: "Movement"},
+			{Keys: "%", Action: "cursor.moveMatchingBracket", Description: "Extend to matching bracket", Category: "Movement"},
 
 			// Text objects
 			{Keys: "i w", Action: "textobj.innerWord", Description: "Inner word", Category: "Text Objects"},

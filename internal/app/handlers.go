@@ -17,17 +17,11 @@ import (
 // RegisterHandlers registers all standard handlers with the dispatcher.
 // This should be called during application bootstrap after the dispatcher is created.
 func RegisterHandlers(d *dispatcher.Dispatcher) {
-	// Core cursor handler
-	d.RegisterNamespace("cursor", cursorhandler.NewHandler())
+	// Combined cursor handler (includes basic movements and word motions)
+	d.RegisterNamespace("cursor", cursorhandler.NewCombinedHandler())
 
-	// Editor handlers (multiple handlers for different operations)
-	d.RegisterNamespace("editor", editorhandler.NewInsertHandler())
-	// Note: The router handles multiple handlers per namespace by using
-	// a composite or fallback pattern. For now we register insert as primary.
-	// Additional editor handlers can be registered individually:
-	// - editorhandler.NewDeleteHandler()
-	// - editorhandler.NewYankHandler()
-	// - editorhandler.NewIndentHandler()
+	// Combined editor handler (includes insert, delete, yank, indent)
+	d.RegisterNamespace("editor", editorhandler.NewCombinedHandler())
 
 	// Mode handler
 	d.RegisterNamespace("mode", modehandler.NewModeHandler())
@@ -55,11 +49,8 @@ func (app *Application) BuildExecutionContext() *execctx.ExecutionContext {
 	if doc.Engine != nil {
 		ctx.Engine = NewEngineExecAdapter(doc.Engine)
 
-		// Wire cursor adapter
-		cursors := doc.Engine.Cursors()
-		if cursors != nil {
-			ctx.Cursors = NewCursorManagerAdapter(cursors)
-		}
+		// Wire cursor adapter (passes engine so changes sync back)
+		ctx.Cursors = NewCursorManagerAdapter(doc.Engine)
 
 		// Wire history adapter
 		ctx.History = NewHistoryAdapter(doc.Engine)
@@ -121,11 +112,8 @@ func (app *Application) wireDispatcherContext(doc *Document) {
 	// Wire engine adapter
 	app.dispatcher.SetEngine(NewEngineExecAdapter(doc.Engine))
 
-	// Wire cursor adapter
-	cursors := doc.Engine.Cursors()
-	if cursors != nil {
-		app.dispatcher.SetCursors(NewCursorManagerAdapter(cursors))
-	}
+	// Wire cursor adapter (passes engine so changes sync back)
+	app.dispatcher.SetCursors(NewCursorManagerAdapter(doc.Engine))
 
 	// Wire history adapter (engine exposes history operations directly)
 	app.dispatcher.SetHistory(NewHistoryAdapter(doc.Engine))

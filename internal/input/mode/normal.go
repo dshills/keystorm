@@ -143,73 +143,73 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.left", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "cursor.moveLeft", Args: map[string]any{"count": count}},
 			}
 		case 'j': // Move down
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.down", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "cursor.moveDown", Args: map[string]any{"count": count}},
 			}
 		case 'k': // Move up
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.up", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "cursor.moveUp", Args: map[string]any{"count": count}},
 			}
 		case 'l': // Move right
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.right", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "cursor.moveRight", Args: map[string]any{"count": count}},
 			}
 		case 'w': // Move word forward
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.word_forward", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "cursor.wordForward", Args: map[string]any{"count": count}},
 			}
 		case 'b': // Move word backward
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.word_backward", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "cursor.wordBackward", Args: map[string]any{"count": count}},
 			}
 		case 'e': // Move to end of word
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.word_end", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "cursor.wordEndForward", Args: map[string]any{"count": count}},
 			}
 		case '0': // Move to beginning of line (when no count)
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.line_start"},
+				Action:   &Action{Name: "cursor.moveLineStart"},
 			}
 		case '$': // Move to end of line
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.line_end"},
+				Action:   &Action{Name: "cursor.moveLineEnd"},
 			}
 		case '^': // Move to first non-blank
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.first_non_blank"},
+				Action:   &Action{Name: "cursor.firstNonBlank"},
 			}
 		case 'G': // Go to line or end of file
 			m.ResetState()
 			if count > 1 {
 				return &UnmappedResult{
 					Consumed: true,
-					Action:   &Action{Name: "cursor.go_to_line", Args: map[string]any{"line": count}},
+					Action:   &Action{Name: "cursor.gotoLine", Args: map[string]any{"line": count}},
 				}
 			}
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "cursor.file_end"},
+				Action:   &Action{Name: "cursor.moveLastLine"},
 			}
 
 		// Basic editing
@@ -217,13 +217,13 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "editor.delete_char", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "editor.deleteChar", Args: map[string]any{"count": count}},
 			}
 		case 'X': // Delete character before cursor
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "editor.delete_char_before", Args: map[string]any{"count": count}},
+				Action:   &Action{Name: "editor.deleteCharBack", Args: map[string]any{"count": count}},
 			}
 		case 'u': // Undo
 			m.ResetState()
@@ -245,7 +245,7 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 				m.ResetState()
 				return &UnmappedResult{
 					Consumed: true,
-					Action:   &Action{Name: "editor.delete_line", Args: map[string]any{"count": count}},
+					Action:   &Action{Name: "editor.deleteLine", Args: map[string]any{"count": count}},
 				}
 			}
 			m.pendingOperator = "d"
@@ -256,7 +256,7 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 				m.ResetState()
 				return &UnmappedResult{
 					Consumed: true,
-					Action:   &Action{Name: "editor.yank_line", Args: map[string]any{"count": count}},
+					Action:   &Action{Name: "editor.yankLine", Args: map[string]any{"count": count}},
 				}
 			}
 			m.pendingOperator = "y"
@@ -267,7 +267,7 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 				m.ResetState()
 				return &UnmappedResult{
 					Consumed: true,
-					Action:   &Action{Name: "editor.change_line", Args: map[string]any{"count": count}},
+					Action:   &Action{Name: "editor.changeLine", Args: map[string]any{"count": count}},
 				}
 			}
 			m.pendingOperator = "c"
@@ -276,13 +276,13 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "editor.paste", Args: map[string]any{"after": true}},
+				Action:   &Action{Name: "editor.pasteAfter"},
 			}
 		case 'P': // Paste before
 			m.ResetState()
 			return &UnmappedResult{
 				Consumed: true,
-				Action:   &Action{Name: "editor.paste", Args: map[string]any{"after": false}},
+				Action:   &Action{Name: "editor.pasteBefore"},
 			}
 		}
 	}
@@ -293,37 +293,37 @@ func (m *NormalMode) HandleUnmapped(event key.Event, ctx *Context) *UnmappedResu
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.left", Args: map[string]any{"count": m.Count()}},
+			Action:   &Action{Name: "cursor.moveLeft", Args: map[string]any{"count": m.Count()}},
 		}
 	case key.KeyRight:
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.right", Args: map[string]any{"count": m.Count()}},
+			Action:   &Action{Name: "cursor.moveRight", Args: map[string]any{"count": m.Count()}},
 		}
 	case key.KeyUp:
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.up", Args: map[string]any{"count": m.Count()}},
+			Action:   &Action{Name: "cursor.moveUp", Args: map[string]any{"count": m.Count()}},
 		}
 	case key.KeyDown:
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.down", Args: map[string]any{"count": m.Count()}},
+			Action:   &Action{Name: "cursor.moveDown", Args: map[string]any{"count": m.Count()}},
 		}
 	case key.KeyHome:
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.line_start"},
+			Action:   &Action{Name: "cursor.moveLineStart"},
 		}
 	case key.KeyEnd:
 		m.ResetState()
 		return &UnmappedResult{
 			Consumed: true,
-			Action:   &Action{Name: "cursor.line_end"},
+			Action:   &Action{Name: "cursor.moveLineEnd"},
 		}
 	case key.KeyPageUp:
 		m.ResetState()

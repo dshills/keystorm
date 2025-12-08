@@ -232,8 +232,8 @@ func TestKeymapManager_Lookup(t *testing.T) {
 		t.Fatal("Lookup() returned nil binding")
 	}
 
-	if binding.Action != "cursor.down" {
-		t.Errorf("Action = %q, want 'cursor.down'", binding.Action)
+	if binding.Action != "cursor.moveDown" {
+		t.Errorf("Action = %q, want 'cursor.moveDown'", binding.Action)
 	}
 }
 
@@ -366,7 +366,7 @@ func TestKeymapManager_UserOverridesDefaults(t *testing.T) {
 	}
 
 	// Add a user binding that overrides a default
-	// In defaults, 'j' is cursor.down. Let's override it.
+	// In defaults, 'j' is cursor.moveDown. Let's override it.
 	userBinding := KeymapBinding{
 		Keys:     "j",
 		Action:   "custom.action",
