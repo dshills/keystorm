@@ -12,6 +12,7 @@ import (
 	"github.com/dshills/keystorm/internal/config"
 	"github.com/dshills/keystorm/internal/dispatcher"
 	"github.com/dshills/keystorm/internal/event"
+	"github.com/dshills/keystorm/internal/input/key"
 	"github.com/dshills/keystorm/internal/input/mode"
 	"github.com/dshills/keystorm/internal/integration"
 	"github.com/dshills/keystorm/internal/lsp"
@@ -44,12 +45,15 @@ type Application struct {
 	lsp     *lsp.Manager
 
 	// Extension components
-	plugins     *plugin.System
+	plugins     *plugin.Manager
 	integration *integration.Manager
 
 	// State
 	running atomic.Bool
 	done    chan struct{}
+
+	// Shutdown synchronization
+	shutdownOnce sync.Once
 
 	// Options
 	opts Options
@@ -79,126 +83,23 @@ type Options struct {
 // New creates a new Application with the given options.
 func New(opts Options) (*Application, error) {
 	app := &Application{
-		opts:      opts,
-		done:      make(chan struct{}),
-		documents: NewDocumentManager(),
+		opts: opts,
+		done: make(chan struct{}),
 	}
 
-	if err := app.bootstrap(); err != nil {
+	// Use bootstrapper for component initialization with cleanup on failure
+	b := newBootstrapper(app, opts)
+	if err := b.bootstrap(); err != nil {
 		return nil, err
 	}
 
+	// Wire event subscriptions after successful bootstrap
+	if err := app.WireEventSubscriptions(); err != nil {
+		b.cleanup()
+		return nil, &InitError{Component: "event subscriptions", Err: err}
+	}
+
 	return app, nil
-}
-
-// bootstrap initializes all components in dependency order.
-func (app *Application) bootstrap() error {
-	var err error
-
-	// 1. Event Bus - messaging foundation
-	app.eventBus = event.NewBus()
-	if err := app.eventBus.Start(); err != nil {
-		return &InitError{Component: "event bus", Err: err}
-	}
-
-	// 2. Config System
-	configOpts := []config.Option{
-		config.WithWatcher(true),
-		config.WithSchemaValidation(true),
-	}
-	if app.opts.WorkspacePath != "" {
-		configOpts = append(configOpts, config.WithProjectConfigDir(app.opts.WorkspacePath))
-	}
-	app.config = config.New(configOpts...)
-	if err := app.config.Load(context.Background()); err != nil {
-		// Config load errors are non-fatal - use defaults
-		// Log warning in production
-	}
-
-	// 3. Mode Manager
-	app.modeManager = mode.NewManager()
-	app.registerModes()
-
-	// 4. Dispatcher
-	dispatcherConfig := dispatcher.DefaultConfig()
-	dispatcherConfig.RecoverFromPanic = true
-	app.dispatcher = dispatcher.New(dispatcherConfig)
-	app.dispatcher.SetModeManager(app.modeManager)
-
-	// 5. Project (if workspace specified)
-	if app.opts.WorkspacePath != "" {
-		proj := project.New(project.WithConfig(project.DefaultConfig()))
-		if err := proj.Open(context.Background(), app.opts.WorkspacePath); err != nil {
-			// Project open errors are non-fatal
-			// Log warning in production
-		} else {
-			app.project = proj
-		}
-	}
-
-	// 6. LSP Manager
-	app.lsp = lsp.NewManager(
-		lsp.WithRequestTimeout(10*time.Second),
-		lsp.WithSupervision(lsp.DefaultSupervisorConfig()),
-	)
-
-	// Register default language servers
-	for lang, cfg := range lsp.AutoDetectServers() {
-		app.lsp.RegisterServer(lang, cfg)
-	}
-
-	// Set workspace folders if project is open
-	if app.project != nil {
-		folders := lsp.DetectWorkspaceFolders(app.project.Root())
-		app.lsp.SetWorkspaceFolders(folders)
-	}
-
-	// 7. Plugin System
-	app.plugins, err = plugin.NewSystem()
-	if err != nil {
-		// Plugin system errors are non-fatal
-		// Log warning in production
-		app.plugins = nil
-	}
-
-	// 8. Integration Manager
-	integrationOpts := []integration.ManagerOption{
-		integration.WithShutdownTimeout(5 * time.Second),
-	}
-	if app.opts.WorkspacePath != "" {
-		integrationOpts = append(integrationOpts, integration.WithWorkspaceRoot(app.opts.WorkspacePath))
-	}
-	app.integration, err = integration.NewManager(integrationOpts...)
-	if err != nil {
-		// Integration errors are non-fatal
-		// Log warning in production
-		app.integration = nil
-	}
-
-	// 9. Open initial files
-	for _, file := range app.opts.Files {
-		if _, err := app.documents.Open(file); err != nil {
-			// File open errors are non-fatal for startup
-			// Log warning in production
-		}
-	}
-
-	// Create scratch buffer if no files opened
-	if app.documents.Count() == 0 {
-		app.documents.CreateScratch()
-	}
-
-	return nil
-}
-
-// registerModes registers the default editing modes.
-func (app *Application) registerModes() {
-	// Register placeholder modes - real modes from vim package would be registered here
-	// This allows the application to be tested without full vim implementation
-	app.modeManager.Register(&placeholderMode{name: "normal"})
-	app.modeManager.Register(&placeholderMode{name: "insert"})
-	app.modeManager.Register(&placeholderMode{name: "visual"})
-	app.modeManager.Register(&placeholderMode{name: "command"})
 }
 
 // SetBackend sets the terminal backend.
@@ -234,15 +135,21 @@ func (app *Application) Run() error {
 		app.renderer = renderer.New(app.backend, renderer.DefaultOptions())
 	}
 
+	// Wire dispatcher to active document
+	app.WireDispatcher()
+
 	// Set initial mode
 	if err := app.modeManager.SetInitialMode("normal"); err != nil {
 		// Non-fatal, continue without mode
+		_ = err
 	}
 
 	// Load plugins
 	if app.plugins != nil {
-		if err := app.plugins.LoadAll(); err != nil {
+		ctx := context.Background()
+		if err := app.plugins.LoadAll(ctx); err != nil {
 			// Non-fatal, log warning
+			_ = err
 		}
 	}
 
@@ -279,19 +186,66 @@ func (app *Application) eventLoop() error {
 			dt := now.Sub(lastUpdate).Seconds()
 			lastUpdate = now
 
+			// Poll for input events (non-blocking check)
+			app.pollInput()
+
 			// Update and render
 			if app.renderer != nil {
 				app.updateRenderer()
 				app.renderer.Update(dt)
 				app.renderer.Render()
 			}
-
-		default:
-			// Poll for input events (non-blocking would be better)
-			// For now, we skip this to avoid blocking
-			// A real implementation would use a separate goroutine for input
 		}
 	}
+
+	return nil
+}
+
+// pollInput polls for input events from the backend.
+// This is called from the event loop to handle input non-blockingly.
+func (app *Application) pollInput() {
+	if app.backend == nil {
+		return
+	}
+
+	// Poll for event (PollEvent is blocking, but we call it from the frame loop)
+	// In a production implementation, this would be done in a separate goroutine
+	// For now, we skip polling to avoid blocking the render loop
+
+	// TODO: Implement proper input handling with a goroutine for PollEvent
+	// and a channel to communicate events to the main loop
+}
+
+// handleEvent processes a backend event.
+func (app *Application) handleEvent(ev backend.Event) error {
+	// Handle resize event
+	if ev.Type == backend.EventResize {
+		if app.renderer != nil {
+			w, h := app.backend.Size()
+			app.renderer.Resize(w, h)
+		}
+		return nil
+	}
+
+	// Handle key events through mode manager
+	if ev.Type != backend.EventKey {
+		return nil
+	}
+
+	if app.modeManager == nil {
+		return nil
+	}
+
+	// Get current mode and let it handle the key
+	currentMode := app.modeManager.Current()
+	if currentMode == nil {
+		return nil
+	}
+
+	// Convert to key.Event and call HandleUnmapped
+	// The actual key handling would involve the keymap system
+	// For now, this is a placeholder
+	_ = currentMode // Suppress unused warning
 
 	return nil
 }
@@ -306,18 +260,23 @@ func (app *Application) updateRenderer() {
 	// Set buffer for rendering
 	app.renderer.SetBuffer(doc.Engine)
 
-	// Set cursor provider (would need an adapter)
-	// app.renderer.SetCursorProvider(cursorAdapter)
+	// Note: Cursor provider, mode display, file path, and modified state
+	// would be set through a status line component or separate UI layer
+	// in a full implementation. The renderer focuses on text content only.
 }
 
 // Shutdown initiates graceful shutdown.
+// Safe to call multiple times.
 func (app *Application) Shutdown() {
-	if !app.running.Load() {
-		return
-	}
+	app.shutdownOnce.Do(func() {
+		// Signal event loop to stop
+		close(app.done)
 
-	close(app.done)
-	app.shutdown()
+		// Perform cleanup if running
+		if app.running.Load() {
+			app.shutdown()
+		}
+	})
 }
 
 // shutdown performs cleanup in reverse initialization order.
@@ -332,7 +291,7 @@ func (app *Application) shutdown() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			app.plugins.Shutdown()
+			_ = app.plugins.UnloadAll(ctx)
 		}()
 	}
 
@@ -430,8 +389,8 @@ func (app *Application) LSP() *lsp.Manager {
 	return app.lsp
 }
 
-// Plugins returns the plugin system (may be nil).
-func (app *Application) Plugins() *plugin.System {
+// Plugins returns the plugin manager (may be nil).
+func (app *Application) Plugins() *plugin.Manager {
 	return app.plugins
 }
 
@@ -452,10 +411,19 @@ type InitError struct {
 }
 
 func (e *InitError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Err == nil {
+		return "init " + e.Component
+	}
 	return "init " + e.Component + ": " + e.Err.Error()
 }
 
 func (e *InitError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
 	return e.Err
 }
 
@@ -464,12 +432,21 @@ type placeholderMode struct {
 	name string
 }
 
-func (m *placeholderMode) Name() string { return m.name }
+// Compile-time assertion that placeholderMode implements mode.Mode.
+var _ mode.Mode = (*placeholderMode)(nil)
+
+func (m *placeholderMode) Name() string        { return m.name }
+func (m *placeholderMode) DisplayName() string { return m.name }
+func (m *placeholderMode) CursorStyle() mode.CursorStyle {
+	if m.name == "insert" {
+		return mode.CursorBar
+	}
+	return mode.CursorBlock
+}
 
 func (m *placeholderMode) Enter(_ *mode.Context) error { return nil }
+func (m *placeholderMode) Exit(_ *mode.Context) error  { return nil }
 
-func (m *placeholderMode) Exit(_ *mode.Context) error { return nil }
-
-func (m *placeholderMode) HandleKey(_ *mode.KeyEvent) (mode.Result, bool) {
-	return mode.Result{}, false
+func (m *placeholderMode) HandleUnmapped(_ key.Event, _ *mode.Context) *mode.UnmappedResult {
+	return nil
 }

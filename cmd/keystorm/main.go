@@ -2,10 +2,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/dshills/keystorm/internal/app"
@@ -20,41 +22,53 @@ var (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	opts := parseFlags()
 
 	// Create application
 	application, err := app.New(opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to initialize: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
+	// Ensure cleanup on all exit paths
+	defer application.Shutdown()
+
 	// Create terminal backend
-	term := backend.NewTerminalBackend()
+	term, err := backend.NewTerminal()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to create terminal: %v\n", err)
+		return 1
+	}
 	if err := application.SetBackend(term); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to set backend: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// Handle signals for graceful shutdown
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		sig := <-signals
-		_ = sig // Could log the signal
+		<-signals
 		application.Shutdown()
 	}()
 
 	// Run the application
 	if err := application.Run(); err != nil {
-		// Check if it's a normal quit
-		if err == app.ErrQuit {
-			os.Exit(0)
+		// Check if it's a normal quit using errors.Is for wrapped errors
+		if errors.Is(err, app.ErrQuit) {
+			return 0
 		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+
+	return 0
 }
 
 func parseFlags() app.Options {
@@ -102,12 +116,24 @@ func parseFlags() app.Options {
 		os.Exit(0)
 	}
 
+	// Validate log level
+	switch opts.LogLevel {
+	case "debug", "info", "warn", "error":
+		// Valid
+	default:
+		fmt.Fprintf(os.Stderr, "Error: invalid log level %q (must be debug, info, warn, or error)\n", opts.LogLevel)
+		os.Exit(1)
+	}
+
 	// Remaining arguments are files to open
 	opts.Files = flag.Args()
 
 	// If workspace not specified but files are, use the directory of the first file
 	if opts.WorkspacePath == "" && len(opts.Files) > 0 {
-		// Could detect workspace from file path
+		absPath, err := filepath.Abs(opts.Files[0])
+		if err == nil {
+			opts.WorkspacePath = filepath.Dir(absPath)
+		}
 	}
 
 	return opts
