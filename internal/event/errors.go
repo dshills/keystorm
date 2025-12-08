@@ -36,6 +36,12 @@ var (
 
 	// ErrShutdownTimeout is returned when graceful shutdown times out.
 	ErrShutdownTimeout = errors.New("shutdown timeout exceeded")
+
+	// ErrSubscriberClosed is returned when operations are attempted on a closed subscriber.
+	ErrSubscriberClosed = errors.New("subscriber is closed")
+
+	// ErrAdapterClosed is returned when operations are attempted on a closed adapter.
+	ErrAdapterClosed = errors.New("adapter is closed")
 )
 
 // HandlerError wraps an error from a handler with additional context.
