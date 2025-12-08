@@ -48,6 +48,9 @@ type Application struct {
 	plugins     *plugin.Manager
 	integration *integration.Manager
 
+	// Event subscriptions
+	subscriptions *subscriptionManager
+
 	// State
 	running atomic.Bool
 	done    chan struct{}
@@ -296,12 +299,19 @@ func (app *Application) shutdown() {
 		app.project.Close(ctx)
 	}
 
-	// 5. Close config
+	// 5. Cleanup event subscriptions (before stopping event bus)
+	// Subscriptions must be cleaned up while event bus is still running
+	// to properly unsubscribe handlers.
+	if app.subscriptions != nil {
+		app.subscriptions.cleanup()
+	}
+
+	// 6. Close config
 	if app.config != nil {
 		app.config.Close()
 	}
 
-	// 6. Stop event bus
+	// 7. Stop event bus
 	if app.eventBus != nil {
 		app.eventBus.Stop(ctx)
 	}

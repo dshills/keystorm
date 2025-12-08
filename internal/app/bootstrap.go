@@ -333,19 +333,17 @@ func (b *bootstrapper) cleanupComponent(ctx context.Context, component string) {
 
 // WireEventSubscriptions sets up event subscriptions between components.
 // Called after bootstrap completes successfully.
+// Prerequisites: eventBus must be initialized and started.
 func (app *Application) WireEventSubscriptions() error {
 	if app.eventBus == nil {
 		return nil
 	}
 
-	// Subscribe to buffer content changes for renderer dirty marking
-	// This will be implemented when the typed event system is integrated
-	//
-	// Example subscriptions:
-	// app.eventBus.Subscribe("buffer.content.*", app.onBufferChange)
-	// app.eventBus.Subscribe("config.changed.*", app.onConfigChange)
-	// app.eventBus.Subscribe("mode.changed", app.onModeChange)
-	// app.eventBus.Subscribe("lsp.diagnostics.*", app.onDiagnostics)
+	// Create and initialize subscription manager
+	app.subscriptions = newSubscriptionManager(app)
+	if err := app.subscriptions.setupSubscriptions(); err != nil {
+		return &InitError{Component: "subscriptions", Err: err}
+	}
 
 	return nil
 }
