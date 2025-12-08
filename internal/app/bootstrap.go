@@ -175,14 +175,8 @@ func (b *bootstrapper) initDispatcher() error {
 
 // registerHandlers registers all dispatcher handlers.
 func (b *bootstrapper) registerHandlers() {
-	// Core handlers will be registered here once handler implementations exist
-	// For now, dispatcher is initialized without handlers
-	//
-	// Example registrations:
-	// b.app.dispatcher.RegisterNamespace("cursor", handlers.NewCursorHandler())
-	// b.app.dispatcher.RegisterNamespace("editor", handlers.NewEditorHandler())
-	// b.app.dispatcher.RegisterNamespace("file", handlers.NewFileHandler())
-	// b.app.dispatcher.RegisterNamespace("mode", handlers.NewModeHandler())
+	// Register all standard handlers with the dispatcher
+	RegisterHandlers(b.app.dispatcher)
 }
 
 // initProject initializes the project/workspace manager.
