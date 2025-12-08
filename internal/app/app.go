@@ -173,6 +173,9 @@ func (app *Application) eventLoop() error {
 	frameTicker := time.NewTicker(frameTime)
 	defer frameTicker.Stop()
 
+	// Start input polling goroutine
+	inputEvents := app.startInputPolling()
+
 	lastUpdate := time.Now()
 
 	for app.running.Load() {
@@ -180,14 +183,25 @@ func (app *Application) eventLoop() error {
 		case <-app.done:
 			return nil
 
+		case ev, ok := <-inputEvents:
+			if !ok {
+				// Input channel closed
+				return nil
+			}
+			// Handle input event
+			if err := app.handleBackendEvent(ev); err != nil {
+				if err == ErrQuit {
+					return nil
+				}
+				// Log error but continue
+				_ = err
+			}
+
 		case <-frameTicker.C:
 			// Calculate delta time
 			now := time.Now()
 			dt := now.Sub(lastUpdate).Seconds()
 			lastUpdate = now
-
-			// Poll for input events (non-blocking check)
-			app.pollInput()
 
 			// Update and render
 			if app.renderer != nil {
@@ -197,55 +211,6 @@ func (app *Application) eventLoop() error {
 			}
 		}
 	}
-
-	return nil
-}
-
-// pollInput polls for input events from the backend.
-// This is called from the event loop to handle input non-blockingly.
-func (app *Application) pollInput() {
-	if app.backend == nil {
-		return
-	}
-
-	// Poll for event (PollEvent is blocking, but we call it from the frame loop)
-	// In a production implementation, this would be done in a separate goroutine
-	// For now, we skip polling to avoid blocking the render loop
-
-	// TODO: Implement proper input handling with a goroutine for PollEvent
-	// and a channel to communicate events to the main loop
-}
-
-// handleEvent processes a backend event.
-func (app *Application) handleEvent(ev backend.Event) error {
-	// Handle resize event
-	if ev.Type == backend.EventResize {
-		if app.renderer != nil {
-			w, h := app.backend.Size()
-			app.renderer.Resize(w, h)
-		}
-		return nil
-	}
-
-	// Handle key events through mode manager
-	if ev.Type != backend.EventKey {
-		return nil
-	}
-
-	if app.modeManager == nil {
-		return nil
-	}
-
-	// Get current mode and let it handle the key
-	currentMode := app.modeManager.Current()
-	if currentMode == nil {
-		return nil
-	}
-
-	// Convert to key.Event and call HandleUnmapped
-	// The actual key handling would involve the keymap system
-	// For now, this is a placeholder
-	_ = currentMode // Suppress unused warning
 
 	return nil
 }
