@@ -294,44 +294,64 @@ func (m *EventModule) emit(L *lua.LState) int {
 }
 
 // createCallback creates a Go callback that invokes a Lua handler.
+// The callback uses the LuaExecutor to ensure thread-safe execution on the
+// Lua state's owning goroutine.
 func (m *EventModule) createCallback(localID string) func(data map[string]any) {
 	return func(data map[string]any) {
 		m.mu.Lock()
-		L := m.L
-		handlerTbl := m.handlerTbl
+		executor := m.ctx.LuaExecutor
 		m.mu.Unlock()
 
-		if L == nil || handlerTbl == nil {
-			return // Plugin unloaded
+		// If executor is available, use it for thread-safe execution
+		if executor != nil {
+			_ = executor.ExecuteAsync(func(L interface{}) error {
+				return m.executeHandler(localID, data)
+			})
+			return
 		}
 
-		// Get the handler function from our table
-		handler := L.GetField(handlerTbl, localID)
-		if handler.Type() != lua.LTFunction {
-			return // Handler was removed
-		}
-
-		// Convert data to Lua table
-		dataTable := m.mapToTable(L, data)
-
-		// Call the handler
-		L.Push(handler)
-		L.Push(dataTable)
-		if err := L.PCall(1, 0, nil); err != nil {
-			// Log error but don't propagate (event handlers shouldn't crash the system)
-			// In a production system, this would go to a logger
-			_ = err
-		}
+		// Fallback: direct execution (only safe if called from Lua's owning goroutine)
+		// This maintains backward compatibility but is NOT thread-safe.
+		_ = m.executeHandler(localID, data)
 	}
 }
 
+// executeHandler executes the Lua handler for the given subscription.
+// This method MUST be called from the Lua state's owning goroutine.
+func (m *EventModule) executeHandler(localID string, data map[string]any) error {
+	m.mu.Lock()
+	L := m.L
+	handlerTbl := m.handlerTbl
+	m.mu.Unlock()
+
+	if L == nil || handlerTbl == nil {
+		return nil // Plugin unloaded
+	}
+
+	// Get the handler function from our table
+	handler := L.GetField(handlerTbl, localID)
+	if handler.Type() != lua.LTFunction {
+		return nil // Handler was removed
+	}
+
+	// Convert data to Lua table
+	dataTable := m.mapToTable(L, data)
+
+	// Call the handler
+	L.Push(handler)
+	L.Push(dataTable)
+	if err := L.PCall(1, 0, nil); err != nil {
+		// Log error but don't propagate (event handlers shouldn't crash the system)
+		return err
+	}
+	return nil
+}
+
 // createOnceCallback creates a callback that unsubscribes after first call.
+// The callback uses the LuaExecutor to ensure thread-safe execution.
 func (m *EventModule) createOnceCallback(localID string) func(data map[string]any) {
 	called := false
 	var callMu sync.Mutex
-
-	// Create the base callback once, not on each invocation
-	baseCallback := m.createCallback(localID)
 
 	return func(data map[string]any) {
 		callMu.Lock()
@@ -342,25 +362,45 @@ func (m *EventModule) createOnceCallback(localID string) func(data map[string]an
 		called = true
 		callMu.Unlock()
 
-		// Call the handler
-		baseCallback(data)
-
-		// Then clean up the subscription
 		m.mu.Lock()
-		info, exists := m.subscriptions[localID]
-		if exists {
-			delete(m.subscriptions, localID)
-			if m.handlerTbl != nil {
-				m.handlerTbl.RawSetString(localID, lua.LNil)
-			}
-		}
-		eventProvider := m.ctx.Event
+		executor := m.ctx.LuaExecutor
 		m.mu.Unlock()
 
-		// Unsubscribe from provider
-		if exists && eventProvider != nil {
-			eventProvider.Unsubscribe(info.subID)
+		// Define the handler execution and cleanup
+		executeAndCleanup := func() {
+			// Execute the handler
+			_ = m.executeHandler(localID, data)
+
+			// Clean up the subscription (after handler executes)
+			m.mu.Lock()
+			info, exists := m.subscriptions[localID]
+			if exists {
+				delete(m.subscriptions, localID)
+				// handlerTbl access is safe here since we're on the Lua goroutine
+				if m.handlerTbl != nil {
+					m.handlerTbl.RawSetString(localID, lua.LNil)
+				}
+			}
+			eventProvider := m.ctx.Event
+			m.mu.Unlock()
+
+			// Unsubscribe from provider
+			if exists && eventProvider != nil {
+				eventProvider.Unsubscribe(info.subID)
+			}
 		}
+
+		// If executor is available, use it for thread-safe execution
+		if executor != nil {
+			_ = executor.ExecuteAsync(func(L interface{}) error {
+				executeAndCleanup()
+				return nil
+			})
+			return
+		}
+
+		// Fallback: direct execution (only safe if called from Lua's owning goroutine)
+		executeAndCleanup()
 	}
 }
 

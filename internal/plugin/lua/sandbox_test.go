@@ -380,3 +380,99 @@ func TestSandboxAllowsKsModule(t *testing.T) {
 		t.Errorf("require('ks') failed: %v", err)
 	}
 }
+
+func TestSandboxOSModuleBlocksDangerousFunctions(t *testing.T) {
+	L := glua.NewState(glua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	glua.OpenBase(L)
+	glua.OpenPackage(L)
+	glua.OpenString(L)
+
+	sandbox := NewSandbox(L, 1000000)
+	sandbox.Install()
+
+	// Grant shell capability to get access to os module
+	sandbox.Grant(CapabilityShell)
+
+	// Get os module via require
+	err := L.DoString(`local os = require("os")`)
+	if err != nil {
+		t.Fatalf("require('os') failed: %v", err)
+	}
+
+	// Test that safe functions exist
+	safeFunctions := []string{"getenv", "time", "clock", "execute"}
+	for _, fn := range safeFunctions {
+		err := L.DoString(`
+			local os = require("os")
+			if os.` + fn + ` == nil then
+				error("os.` + fn + ` should exist")
+			end
+		`)
+		if err != nil {
+			t.Errorf("os.%s should exist: %v", fn, err)
+		}
+	}
+
+	// Test that dangerous functions do NOT exist (security fix)
+	dangerousFunctions := []string{"remove", "rename", "exit", "setenv", "tmpname", "setlocale"}
+	for _, fn := range dangerousFunctions {
+		err := L.DoString(`
+			local os = require("os")
+			if os.` + fn + ` ~= nil then
+				error("os.` + fn + ` should NOT exist in sandboxed environment")
+			end
+		`)
+		if err != nil {
+			t.Errorf("os.%s should NOT exist in sandbox: %v", fn, err)
+		}
+	}
+}
+
+func TestSandboxIOModuleBlocksDangerousOperations(t *testing.T) {
+	L := glua.NewState(glua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	glua.OpenBase(L)
+	glua.OpenPackage(L)
+	glua.OpenString(L)
+
+	sandbox := NewSandbox(L, 1000000)
+	sandbox.Install()
+
+	// Grant only read capability
+	sandbox.Grant(CapabilityFileRead)
+
+	// Get io module via require
+	err := L.DoString(`local io = require("io")`)
+	if err != nil {
+		t.Fatalf("require('io') failed: %v", err)
+	}
+
+	// Verify io.open exists
+	err = L.DoString(`
+		local io = require("io")
+		if io.open == nil then
+			error("io.open should exist")
+		end
+	`)
+	if err != nil {
+		t.Errorf("io.open should exist: %v", err)
+	}
+
+	// Verify read-only restriction: opening in write mode should fail
+	// When using read-only capability, attempting write mode raises an error
+	err = L.DoString(`
+		local io = require("io")
+		local ok, result = pcall(function()
+			return io.open("/tmp/testfile", "w")
+		end)
+		-- Should fail with an error, so ok should be false
+		if ok and result ~= nil then
+			result:close()
+			error("io.open should not allow write mode with only read capability")
+		end
+	`)
+	if err != nil {
+		t.Errorf("Read-only io test failed unexpectedly: %v", err)
+	}
+}

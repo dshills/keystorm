@@ -1,12 +1,208 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+// Security errors for auth operations.
+var (
+	// ErrInvalidCredentialHelper indicates the helper name contains invalid characters.
+	ErrInvalidCredentialHelper = errors.New("invalid credential helper: contains disallowed characters")
+
+	// ErrInvalidHostname indicates the hostname contains invalid characters.
+	ErrInvalidHostname = errors.New("invalid hostname: contains disallowed characters")
+
+	// ErrInvalidProtocol indicates the protocol contains invalid characters.
+	ErrInvalidProtocol = errors.New("invalid protocol: must be https, http, or ssh")
+
+	// ErrInvalidPath indicates the path contains invalid characters.
+	ErrInvalidPath = errors.New("invalid path: contains disallowed characters")
+
+	// ErrInvalidKeyPath indicates the SSH key path is invalid.
+	ErrInvalidKeyPath = errors.New("invalid SSH key path")
+)
+
+// allowedCredentialHelpers is a whitelist of known-safe credential helpers.
+// Additional helpers can be validated if they match a safe path pattern.
+var allowedCredentialHelpers = map[string]bool{
+	"":                       true, // Empty means use system default
+	"cache":                  true,
+	"store":                  true,
+	"osxkeychain":            true,
+	"manager":                true,
+	"manager-core":           true,
+	"wincred":                true,
+	"gnome-keyring":          true,
+	"libsecret":              true,
+	"credential-osxkeychain": true,
+	"credential-wincred":     true,
+}
+
+// validProtocols are the allowed Git protocols.
+var validProtocols = map[string]bool{
+	"https": true,
+	"http":  true,
+	"ssh":   true,
+	"git":   true,
+}
+
+// hostnameRegex validates hostnames (RFC 1123 with optional port).
+var hostnameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?(:[0-9]+)?$`)
+
+// pathRegex validates repository paths (alphanumeric, dashes, underscores, slashes, dots).
+var pathRegex = regexp.MustCompile(`^[a-zA-Z0-9\-_./]*$`)
+
+// credentialHelperPathRegex validates credential helper paths.
+// Allows absolute paths to executables.
+var credentialHelperPathRegex = regexp.MustCompile(`^(/[a-zA-Z0-9\-_./]+|[a-zA-Z]:\\[a-zA-Z0-9\-_./\\]+)$`)
+
+// validateCredentialHelper validates a credential helper name or path.
+// Returns an error if the helper name could be used for command injection.
+func validateCredentialHelper(helper string) error {
+	// Empty helper uses system default
+	if helper == "" {
+		return nil
+	}
+
+	// Check whitelist first
+	if allowedCredentialHelpers[helper] {
+		return nil
+	}
+
+	// Check if it's a valid path to an executable
+	if credentialHelperPathRegex.MatchString(helper) {
+		// Verify the path exists and is executable
+		info, err := os.Stat(helper)
+		if err != nil {
+			return ErrInvalidCredentialHelper
+		}
+		// Check it's not a directory
+		if info.IsDir() {
+			return ErrInvalidCredentialHelper
+		}
+		return nil
+	}
+
+	// Disallow shell metacharacters that could enable injection
+	// These characters have special meaning in shells
+	dangerousChars := []string{
+		";", "&", "|", "$", "`", "(", ")", "{", "}",
+		"<", ">", "!", "\n", "\r", "\"", "'", "\\",
+	}
+	for _, char := range dangerousChars {
+		if strings.Contains(helper, char) {
+			return ErrInvalidCredentialHelper
+		}
+	}
+
+	// Helper name should be simple alphanumeric with optional dashes
+	simpleNameRegex := regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`)
+	if !simpleNameRegex.MatchString(helper) {
+		return ErrInvalidCredentialHelper
+	}
+
+	return nil
+}
+
+// validateProtocol validates a protocol string.
+func validateProtocol(protocol string) error {
+	if !validProtocols[strings.ToLower(protocol)] {
+		return ErrInvalidProtocol
+	}
+	return nil
+}
+
+// validateHostname validates a hostname string.
+func validateHostname(host string) error {
+	if host == "" {
+		return nil
+	}
+	// Check for newlines (credential injection)
+	if strings.ContainsAny(host, "\n\r") {
+		return ErrInvalidHostname
+	}
+	if !hostnameRegex.MatchString(host) {
+		return ErrInvalidHostname
+	}
+	return nil
+}
+
+// validatePath validates a repository path string.
+func validatePath(path string) error {
+	if path == "" {
+		return nil
+	}
+	// Check for newlines (credential injection)
+	if strings.ContainsAny(path, "\n\r") {
+		return ErrInvalidPath
+	}
+	if !pathRegex.MatchString(path) {
+		return ErrInvalidPath
+	}
+	// Prevent path traversal
+	if strings.Contains(path, "..") {
+		return ErrInvalidPath
+	}
+	return nil
+}
+
+// validateSSHKeyPath validates an SSH key path.
+func validateSSHKeyPath(keyPath string) error {
+	if keyPath == "" {
+		return ErrInvalidKeyPath
+	}
+
+	// Must be an absolute path
+	if !filepath.IsAbs(keyPath) {
+		return ErrInvalidKeyPath
+	}
+
+	// Check for path traversal
+	cleanPath := filepath.Clean(keyPath)
+	if cleanPath != keyPath && cleanPath+"/" != keyPath {
+		// Path was modified by Clean, might contain traversal
+		// Allow trailing slash difference
+		if strings.Contains(keyPath, "..") {
+			return ErrInvalidKeyPath
+		}
+	}
+
+	// Must be in user's home directory or /etc/ssh
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ErrInvalidKeyPath
+	}
+	sshDir := filepath.Join(homeDir, ".ssh")
+
+	// Check if path is within allowed directories
+	allowedPaths := []string{sshDir, "/etc/ssh"}
+	inAllowed := false
+	for _, allowed := range allowedPaths {
+		if strings.HasPrefix(cleanPath, allowed) {
+			inAllowed = true
+			break
+		}
+	}
+	if !inAllowed {
+		return ErrInvalidKeyPath
+	}
+
+	// Check for shell metacharacters
+	dangerousChars := []string{";", "&", "|", "$", "`", "(", ")", "{", "}", "<", ">", "!", "\n", "\r", "\"", "'"}
+	for _, char := range dangerousChars {
+		if strings.Contains(keyPath, char) {
+			return ErrInvalidKeyPath
+		}
+	}
+
+	return nil
+}
 
 // Credential represents git credentials.
 type Credential struct {
@@ -33,12 +229,28 @@ type CredentialHelper struct {
 }
 
 // NewCredentialHelper creates a credential helper wrapper.
-func NewCredentialHelper(helper string) *CredentialHelper {
-	return &CredentialHelper{Helper: helper}
+// Returns an error if the helper name is invalid or contains dangerous characters.
+func NewCredentialHelper(helper string) (*CredentialHelper, error) {
+	if err := validateCredentialHelper(helper); err != nil {
+		return nil, err
+	}
+	return &CredentialHelper{Helper: helper}, nil
 }
 
 // Get retrieves credentials for a host.
+// All input parameters are validated to prevent credential injection attacks.
 func (h *CredentialHelper) Get(protocol, host, path string) (*Credential, error) {
+	// SECURITY: Validate all inputs to prevent injection
+	if err := validateProtocol(protocol); err != nil {
+		return nil, err
+	}
+	if err := validateHostname(host); err != nil {
+		return nil, err
+	}
+	if err := validatePath(path); err != nil {
+		return nil, err
+	}
+
 	input := fmt.Sprintf("protocol=%s\nhost=%s\n", protocol, host)
 	if path != "" {
 		input += fmt.Sprintf("path=%s\n", path)
@@ -63,7 +275,13 @@ func (h *CredentialHelper) Get(protocol, host, path string) (*Credential, error)
 }
 
 // Store stores credentials.
+// The credential is validated to prevent injection attacks.
 func (h *CredentialHelper) Store(cred *Credential) error {
+	// SECURITY: Validate credential before storing
+	if err := h.validateCredential(cred); err != nil {
+		return err
+	}
+
 	input := h.formatCredential(cred)
 
 	args := []string{"credential"}
@@ -83,7 +301,13 @@ func (h *CredentialHelper) Store(cred *Credential) error {
 }
 
 // Erase removes stored credentials.
+// The credential is validated to prevent injection attacks.
 func (h *CredentialHelper) Erase(cred *Credential) error {
+	// SECURITY: Validate credential before erasing
+	if err := h.validateCredential(cred); err != nil {
+		return err
+	}
+
 	input := h.formatCredential(cred)
 
 	args := []string{"credential"}
@@ -99,6 +323,36 @@ func (h *CredentialHelper) Erase(cred *Credential) error {
 		return fmt.Errorf("credential reject: %w", err)
 	}
 
+	return nil
+}
+
+// validateCredential validates a credential to prevent injection.
+func (h *CredentialHelper) validateCredential(cred *Credential) error {
+	if cred == nil {
+		return errors.New("credential is nil")
+	}
+	if cred.Protocol != "" {
+		if err := validateProtocol(cred.Protocol); err != nil {
+			return err
+		}
+	}
+	if cred.Host != "" {
+		if err := validateHostname(cred.Host); err != nil {
+			return err
+		}
+	}
+	if cred.Path != "" {
+		if err := validatePath(cred.Path); err != nil {
+			return err
+		}
+	}
+	// Username and password can contain special chars, but no newlines
+	if strings.ContainsAny(cred.Username, "\n\r") {
+		return errors.New("username contains invalid characters")
+	}
+	if strings.ContainsAny(cred.Password, "\n\r") {
+		return errors.New("password contains invalid characters")
+	}
 	return nil
 }
 
@@ -312,7 +566,13 @@ func (a *SSHAgent) ListKeys() ([]string, error) {
 }
 
 // AddKey adds a key to the agent.
+// The key path is validated to prevent command injection.
 func (a *SSHAgent) AddKey(keyPath string) error {
+	// SECURITY: Validate key path
+	if err := validateSSHKeyPath(keyPath); err != nil {
+		return err
+	}
+
 	if !a.IsRunning() {
 		return fmt.Errorf("SSH agent not running")
 	}
@@ -330,7 +590,13 @@ func (a *SSHAgent) AddKey(keyPath string) error {
 }
 
 // RemoveKey removes a key from the agent.
+// The key path is validated to prevent command injection.
 func (a *SSHAgent) RemoveKey(keyPath string) error {
+	// SECURITY: Validate key path
+	if err := validateSSHKeyPath(keyPath); err != nil {
+		return err
+	}
+
 	if !a.IsRunning() {
 		return fmt.Errorf("SSH agent not running")
 	}
@@ -358,7 +624,13 @@ func (a *SSHAgent) RemoveAllKeys() error {
 }
 
 // ConfigureGitSSH configures git to use a specific SSH key.
+// The key path is validated to prevent command injection.
 func ConfigureGitSSH(keyPath string) error {
+	// SECURITY: Validate key path
+	if err := validateSSHKeyPath(keyPath); err != nil {
+		return err
+	}
+
 	// Set GIT_SSH_COMMAND environment variable
 	// Quote the path to handle spaces and special characters
 	sshCmd := fmt.Sprintf("ssh -i %q -o IdentitiesOnly=yes", keyPath)
@@ -377,7 +649,13 @@ func GetGitCredentialHelper() (string, error) {
 }
 
 // SetGitCredentialHelper sets the credential helper.
+// The helper name is validated to prevent command injection.
 func SetGitCredentialHelper(helper string, global bool) error {
+	// SECURITY: Validate credential helper name
+	if err := validateCredentialHelper(helper); err != nil {
+		return err
+	}
+
 	args := []string{"config"}
 	if global {
 		args = append(args, "--global")

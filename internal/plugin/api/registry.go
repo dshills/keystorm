@@ -221,6 +221,23 @@ type Context struct {
 
 	// Integration provides access to integration layer features (git, debug, tasks).
 	Integration IntegrationProvider
+
+	// LuaExecutor provides thread-safe execution of Lua callbacks.
+	// All Lua callback invocations from providers (Event, Command, Config) must
+	// go through this executor to ensure thread safety.
+	//
+	// gopher-lua's LState is NOT goroutine-safe. The executor serializes all
+	// Lua operations through a single worker goroutine.
+	LuaExecutor LuaExecutorProvider
+}
+
+// LuaExecutorProvider defines the interface for thread-safe Lua execution.
+// This allows callbacks from arbitrary goroutines to safely execute Lua code.
+type LuaExecutorProvider interface {
+	// ExecuteAsync queues a Lua operation for execution without waiting.
+	// The function fn will be called on the Lua state's owning goroutine.
+	// Returns an error if the executor is closed or the queue is full.
+	ExecuteAsync(fn func(L interface{}) error) error
 }
 
 // BufferProvider defines the interface for buffer operations.

@@ -343,33 +343,55 @@ func (m *ConfigModule) has(L *lua.LState) int {
 }
 
 // createCallback creates a Go callback that invokes a Lua handler.
+// The callback uses the LuaExecutor to ensure thread-safe execution on the
+// Lua state's owning goroutine.
 func (m *ConfigModule) createCallback(localID string) func(key string, oldValue, newValue any) {
 	return func(key string, oldValue, newValue any) {
 		m.mu.Lock()
-		L := m.L
-		handlerTbl := m.handlerTbl
+		executor := m.ctx.LuaExecutor
 		m.mu.Unlock()
 
-		if L == nil || handlerTbl == nil {
-			return // Plugin unloaded
+		// If executor is available, use it for thread-safe execution
+		if executor != nil {
+			_ = executor.ExecuteAsync(func(L interface{}) error {
+				return m.executeConfigHandler(localID, key, oldValue, newValue)
+			})
+			return
 		}
 
-		// Get the handler function from our table
-		handler := L.GetField(handlerTbl, localID)
-		if handler.Type() != lua.LTFunction {
-			return // Handler was removed
-		}
-
-		// Call the handler with key, old_value, new_value
-		L.Push(handler)
-		L.Push(lua.LString(key))
-		L.Push(m.anyToLValue(L, oldValue))
-		L.Push(m.anyToLValue(L, newValue))
-		if err := L.PCall(3, 0, nil); err != nil {
-			// Log error but don't propagate (config watchers shouldn't crash the system)
-			_ = err
-		}
+		// Fallback: direct execution (only safe if called from Lua's owning goroutine)
+		_ = m.executeConfigHandler(localID, key, oldValue, newValue)
 	}
+}
+
+// executeConfigHandler executes the Lua handler for the given config change.
+// This method MUST be called from the Lua state's owning goroutine.
+func (m *ConfigModule) executeConfigHandler(localID, key string, oldValue, newValue any) error {
+	m.mu.Lock()
+	L := m.L
+	handlerTbl := m.handlerTbl
+	m.mu.Unlock()
+
+	if L == nil || handlerTbl == nil {
+		return nil // Plugin unloaded
+	}
+
+	// Get the handler function from our table
+	handler := L.GetField(handlerTbl, localID)
+	if handler.Type() != lua.LTFunction {
+		return nil // Handler was removed
+	}
+
+	// Call the handler with key, old_value, new_value
+	L.Push(handler)
+	L.Push(lua.LString(key))
+	L.Push(m.anyToLValue(L, oldValue))
+	L.Push(m.anyToLValue(L, newValue))
+	if err := L.PCall(3, 0, nil); err != nil {
+		// Log error but don't propagate (config watchers shouldn't crash the system)
+		return err
+	}
+	return nil
 }
 
 // anyToLValue converts a Go value to a Lua value.

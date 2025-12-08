@@ -130,6 +130,9 @@ type Executor struct {
 	// problems handles problem matching.
 	problems *ProblemMatcher
 
+	// security validates tasks before execution.
+	security *SecurityValidator
+
 	// listeners receive execution events.
 	listeners   []ExecutionListener
 	listenersMu sync.RWMutex
@@ -160,13 +163,43 @@ func NewExecutor(config ExecutorConfig) *Executor {
 		config.MaxConcurrent = 4
 	}
 
+	// Initialize security validator with default config
+	secConfig := DefaultSecurityConfig()
+	secConfig.WorkspaceRoot = config.WorkingDir
+
 	return &Executor{
 		config:     config,
 		executions: make(map[string]*Execution),
 		sem:        make(chan struct{}, config.MaxConcurrent),
 		variables:  NewVariableResolver(),
 		problems:   NewProblemMatcher(),
+		security:   NewSecurityValidator(secConfig),
 	}
+}
+
+// NewExecutorWithSecurity creates a new task executor with custom security config.
+func NewExecutorWithSecurity(config ExecutorConfig, secConfig SecurityConfig) *Executor {
+	if config.MaxConcurrent <= 0 {
+		config.MaxConcurrent = 4
+	}
+
+	if secConfig.WorkspaceRoot == "" {
+		secConfig.WorkspaceRoot = config.WorkingDir
+	}
+
+	return &Executor{
+		config:     config,
+		executions: make(map[string]*Execution),
+		sem:        make(chan struct{}, config.MaxConcurrent),
+		variables:  NewVariableResolver(),
+		problems:   NewProblemMatcher(),
+		security:   NewSecurityValidator(secConfig),
+	}
+}
+
+// Security returns the security validator for configuration.
+func (e *Executor) Security() *SecurityValidator {
+	return e.security
 }
 
 // AddListener adds an execution listener.
@@ -189,13 +222,66 @@ func (e *Executor) RemoveListener(listener ExecutionListener) {
 	}
 }
 
+// ValidateTask validates a task against security policies without executing it.
+// Use this to check if a task requires user confirmation before execution.
+func (e *Executor) ValidateTask(task *Task) *ValidationResult {
+	return e.security.Validate(task)
+}
+
 // Execute runs a task and returns the execution handle.
+// The task is validated against security policies before execution.
+// If validation fails, an error is returned with details about the violations.
 func (e *Executor) Execute(ctx context.Context, task *Task) (*Execution, error) {
 	return e.ExecuteWithEnv(ctx, task, nil)
 }
 
 // ExecuteWithEnv runs a task with additional environment variables.
+// The task is validated against security policies before execution.
 func (e *Executor) ExecuteWithEnv(ctx context.Context, task *Task, env map[string]string) (*Execution, error) {
+	// SECURITY: Validate task before execution
+	validation := e.security.Validate(task)
+	if !validation.Valid {
+		// Build error message from violations
+		var errMsg strings.Builder
+		errMsg.WriteString("task security validation failed:")
+		for _, v := range validation.Violations {
+			errMsg.WriteString("\n  - ")
+			errMsg.WriteString(v.Error())
+		}
+		return nil, fmt.Errorf("%s", errMsg.String())
+	}
+
+	// Generate execution ID
+	execID := e.generateID()
+
+	// Create execution context
+	execCtx, cancel := context.WithCancel(ctx)
+
+	// Create execution
+	exec := &Execution{
+		ID:       execID,
+		Task:     task,
+		State:    ExecutionStatePending,
+		ExitCode: -1,
+		cancel:   cancel,
+		done:     make(chan struct{}),
+	}
+
+	// Register execution
+	e.executionsMu.Lock()
+	e.executions[execID] = exec
+	e.executionsMu.Unlock()
+
+	// Start execution in background
+	go e.runExecution(execCtx, exec, env)
+
+	return exec, nil
+}
+
+// ExecuteConfirmed runs a task that has already been validated and confirmed.
+// Use this after getting user confirmation for tasks that require it.
+// This bypasses security validation - caller is responsible for validation.
+func (e *Executor) ExecuteConfirmed(ctx context.Context, task *Task, env map[string]string) (*Execution, error) {
 	// Generate execution ID
 	execID := e.generateID()
 

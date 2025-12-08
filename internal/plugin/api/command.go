@@ -176,37 +176,67 @@ func (m *CommandModule) register(L *lua.LState) int {
 }
 
 // createHandler creates a Go handler that calls a Lua function.
+// The handler uses the LuaExecutor to ensure thread-safe execution on the
+// Lua state's owning goroutine.
 func (m *CommandModule) createHandler(cmdID string) palette.CommandHandler {
 	return func(args map[string]any) error {
 		m.mu.Lock()
-		L := m.L
-		handlerTbl := m.handlerTbl
+		executor := m.ctx.LuaExecutor
 		m.mu.Unlock()
 
-		if L == nil || handlerTbl == nil {
-			return fmt.Errorf("plugin unloaded")
+		// If executor is available, use it for thread-safe execution
+		if executor != nil {
+			err := executor.ExecuteAsync(func(L interface{}) error {
+				// Execute the handler; errors are logged but not propagated
+				// since ExecuteAsync is fire-and-forget.
+				_ = m.executeCommandHandler(cmdID, args)
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("failed to queue command handler: %w", err)
+			}
+			// Note: ExecuteAsync doesn't wait for completion.
+			// For commands that need synchronous error handling, we'd need Execute().
+			// For now, fire-and-forget is acceptable for most plugin commands.
+			return nil
 		}
 
-		// Get the handler function from our table
-		handler := L.GetField(handlerTbl, cmdID)
-		if handler.Type() != lua.LTFunction {
-			return fmt.Errorf("handler not found for command %s", cmdID)
-		}
-
-		// Convert args to Lua table
-		argsTable := m.mapToTable(L, args)
-
-		// Push handler and args onto stack
-		L.Push(handler)
-		L.Push(argsTable)
-
-		// Call the handler
-		if err := L.PCall(1, 0, nil); err != nil {
-			return fmt.Errorf("command %s handler error: %w", cmdID, err)
-		}
-
-		return nil
+		// Fallback: direct execution (only safe if called from Lua's owning goroutine)
+		return m.executeCommandHandler(cmdID, args)
 	}
+}
+
+// executeCommandHandler executes the Lua handler for the given command.
+// This method MUST be called from the Lua state's owning goroutine.
+func (m *CommandModule) executeCommandHandler(cmdID string, args map[string]any) error {
+	m.mu.Lock()
+	L := m.L
+	handlerTbl := m.handlerTbl
+	m.mu.Unlock()
+
+	if L == nil || handlerTbl == nil {
+		return fmt.Errorf("plugin unloaded")
+	}
+
+	// Get the handler function from our table
+	handler := L.GetField(handlerTbl, cmdID)
+	if handler.Type() != lua.LTFunction {
+		return fmt.Errorf("handler not found for command %s", cmdID)
+	}
+
+	// Convert args to Lua table
+	argsTable := m.mapToTable(L, args)
+
+	// Push handler and args onto stack
+	L.Push(handler)
+	L.Push(argsTable)
+
+	// Call the handler
+	if err := L.PCall(1, 0, nil); err != nil {
+		return fmt.Errorf("command %s handler error: %w", cmdID, err)
+	}
+
+	return nil
 }
 
 // unregister(id) -> bool

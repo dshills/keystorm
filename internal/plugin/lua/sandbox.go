@@ -3,6 +3,7 @@ package lua
 import (
 	"os"
 	"sync/atomic"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -155,18 +156,36 @@ func (s *Sandbox) installSafeRequire() {
 			if !s.capabilities[CapabilityFileRead] && !s.capabilities[CapabilityFileWrite] {
 				L.RaiseError("module 'io' requires filesystem capability")
 			}
-			// If capability is granted, fall through to use original require
-			L.Push(originalRequire)
-			L.Push(lua.LString(modName))
-			L.Call(1, 1)
+			// SECURITY: Return our sandboxed io module instead of the full
+			// gopher-lua io module. The sandboxed version restricts operations
+			// based on the granted capabilities (read-only vs read-write).
+			ioModule := L.GetGlobal("io")
+			if ioModule == lua.LNil {
+				// If not yet injected, inject based on capability
+				if s.capabilities[CapabilityFileWrite] {
+					s.injectFileWriteAPI()
+				} else {
+					s.injectFileReadAPI()
+				}
+				ioModule = L.GetGlobal("io")
+			}
+			L.Push(ioModule)
 			return 1
 		case "os":
 			if !s.capabilities[CapabilityShell] && !s.capabilities[CapabilityProcess] {
 				L.RaiseError("module 'os' requires shell or process capability")
 			}
-			L.Push(originalRequire)
-			L.Push(lua.LString(modName))
-			L.Call(1, 1)
+			// SECURITY: Do NOT use originalRequire here - it would load the full
+			// gopher-lua os module with dangerous functions (os.remove, os.rename,
+			// os.exit, os.setenv, etc.). Instead, return the sandboxed os module
+			// that was created by injectShellAPI().
+			osModule := L.GetGlobal("os")
+			if osModule == lua.LNil {
+				// If not yet injected, inject it now
+				s.injectShellAPI()
+				osModule = L.GetGlobal("os")
+			}
+			L.Push(osModule)
 			return 1
 		case "debug":
 			if !s.capabilities[CapabilityUnsafe] {
@@ -565,8 +584,8 @@ func (s *Sandbox) injectShellAPI() {
 
 	// os.time - get current time
 	s.L.SetField(osMod, "time", s.L.NewFunction(func(L *lua.LState) int {
-		// Simplified: return current Unix timestamp
-		L.Push(lua.LNumber(float64(os.Getpid()))) // Placeholder
+		// Return current Unix timestamp
+		L.Push(lua.LNumber(float64(time.Now().Unix())))
 		return 1
 	}))
 

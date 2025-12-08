@@ -7,7 +7,10 @@ import (
 )
 
 func TestCredentialHelperFormat(t *testing.T) {
-	helper := NewCredentialHelper("")
+	helper, err := NewCredentialHelper("")
+	if err != nil {
+		t.Fatalf("NewCredentialHelper: %v", err)
+	}
 
 	cred := &Credential{
 		Protocol: "https",
@@ -38,7 +41,10 @@ func TestCredentialHelperFormat(t *testing.T) {
 }
 
 func TestCredentialHelperFormatPartial(t *testing.T) {
-	helper := NewCredentialHelper("")
+	helper, err := NewCredentialHelper("")
+	if err != nil {
+		t.Fatalf("NewCredentialHelper: %v", err)
+	}
 
 	cred := &Credential{
 		Protocol: "https",
@@ -157,7 +163,13 @@ func TestConfigureGitSSH(t *testing.T) {
 	origEnv := os.Getenv("GIT_SSH_COMMAND")
 	defer os.Setenv("GIT_SSH_COMMAND", origEnv)
 
-	keyPath := "/path/to/key"
+	// Get a valid SSH key path in ~/.ssh
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot get home dir")
+	}
+	keyPath := filepath.Join(homeDir, ".ssh", "id_rsa")
+
 	if err := ConfigureGitSSH(keyPath); err != nil {
 		t.Fatalf("configure git ssh: %v", err)
 	}
@@ -196,12 +208,18 @@ func TestTestConnection(t *testing.T) {
 }
 
 func TestNewCredentialHelper(t *testing.T) {
-	helper := NewCredentialHelper("store")
+	helper, err := NewCredentialHelper("store")
+	if err != nil {
+		t.Fatalf("NewCredentialHelper(store): %v", err)
+	}
 	if helper.Helper != "store" {
 		t.Errorf("expected store, got %s", helper.Helper)
 	}
 
-	helper2 := NewCredentialHelper("")
+	helper2, err := NewCredentialHelper("")
+	if err != nil {
+		t.Fatalf("NewCredentialHelper(''): %v", err)
+	}
 	if helper2.Helper != "" {
 		t.Errorf("expected empty, got %s", helper2.Helper)
 	}
