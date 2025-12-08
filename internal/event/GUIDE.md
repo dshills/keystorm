@@ -161,19 +161,35 @@ Reduce allocations in hot paths:
 
 ```go
 // Reuse event objects where safe
+type BufferEvent struct {
+    Data     string
+    BufferID string
+}
+
+func (e *BufferEvent) Reset() {
+    e.Data = ""
+    e.BufferID = ""
+}
+
 var eventPool = sync.Pool{
     New: func() any {
         return &BufferEvent{}
     },
 }
 
-func publishBufferEvent(data string) {
+func publishBufferEvent(data string, bufferID string) {
     evt := eventPool.Get().(*BufferEvent)
     evt.Data = data
+    evt.BufferID = bufferID
     bus.Publish(ctx, evt)
+    // Reset fields before returning to pool to prevent data leaks
+    evt.Reset()
     eventPool.Put(evt)
 }
 ```
+
+> **Warning**: Always reset pooled objects before returning them to the pool
+> to prevent accidental data retention or leaking sensitive information.
 
 ### Profiling Events
 
@@ -204,12 +220,15 @@ respCh := make(chan string, 1)
 bus.PublishSync(ctx, event.NewEvent(topic, RequestEvent{
     Query:    "lookup",
     Response: respCh,
-}))
+}, "requester"))
 result := <-respCh
 
-// Handler
+// Handler - use safe type assertion
 func handler(ctx context.Context, e any) error {
-    req := e.(RequestEvent)
+    req, ok := e.(RequestEvent)
+    if !ok {
+        return fmt.Errorf("unexpected event type: %T", e)
+    }
     req.Response <- "result"
     return nil
 }
@@ -225,13 +244,19 @@ type StateBuilder struct {
 }
 
 func (b *StateBuilder) HandleInsert(ctx context.Context, e any) error {
-    evt := e.(events.BufferContentInserted)
+    evt, ok := e.(events.BufferContentInserted)
+    if !ok {
+        return fmt.Errorf("expected BufferContentInserted, got %T", e)
+    }
     b.state[evt.BufferID] = evt.Text
     return nil
 }
 
 func (b *StateBuilder) HandleDelete(ctx context.Context, e any) error {
-    evt := e.(events.BufferContentDeleted)
+    evt, ok := e.(events.BufferContentDeleted)
+    if !ok {
+        return fmt.Errorf("expected BufferContentDeleted, got %T", e)
+    }
     delete(b.state, evt.BufferID)
     return nil
 }
@@ -266,12 +291,22 @@ func (d *DebouncedHandler) Handle(ctx context.Context, e any) error {
     defer d.mu.Unlock()
 
     if d.timer != nil {
+        // Stop returns false if the timer already fired.
+        // We don't need to drain the channel since AfterFunc doesn't use one.
         d.timer.Stop()
     }
-    d.timer = time.AfterFunc(d.duration, d.fn)
+    d.timer = time.AfterFunc(d.duration, func() {
+        // The callback runs outside the mutex, which is correct.
+        // If you need to access shared state in fn, ensure fn handles
+        // its own synchronization.
+        d.fn()
+    })
     return nil
 }
 ```
+
+> **Note**: The callback function (`fn`) executes outside the mutex lock. If `fn`
+> accesses shared state, it must handle its own synchronization.
 
 ## Debugging
 
@@ -284,14 +319,17 @@ bus := event.NewBus(event.WithDebugLogging(true))
 ### Trace Event Flow
 
 ```go
-// Add a tracing subscriber
+// Add a tracing subscriber - use TopicProvider interface for type-safe access
 bus.Subscribe(topic.Topic("**"), func(ctx context.Context, e any) error {
-    if evt, ok := e.(event.Event[any]); ok {
-        log.Printf("Event: %s from %s", evt.Topic, evt.Source)
-    }
+    env := event.ToEnvelope(e)
+    log.Printf("Event: %s from %s", env.Topic, env.Metadata.Source)
     return nil
 }, event.WithPriority(event.PriorityLow))
 ```
+
+> **Warning**: Be careful when logging event payloads as they may contain
+> sensitive data (credentials, tokens, user input). Only log metadata in
+> production environments.
 
 ### Check Subscription State
 
