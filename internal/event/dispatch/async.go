@@ -150,7 +150,14 @@ func (d *AsyncDispatcher) Enqueue(ctx context.Context, event any, handler Handle
 }
 
 // EnqueueWithTimeout adds a task with a specific timeout.
+// This method is safe to call concurrently with Stop().
 func (d *AsyncDispatcher) EnqueueWithTimeout(ctx context.Context, event any, handler Handler, timeout time.Duration) error {
+	// RACE FIX: Use mutex to coordinate with Stop().
+	// We need to hold the lock while checking running AND sending to queue
+	// to prevent Stop() from closing the channel between these operations.
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if !d.running.Load() {
 		return ErrNotRunning
 	}
@@ -162,6 +169,9 @@ func (d *AsyncDispatcher) EnqueueWithTimeout(ctx context.Context, event any, han
 		timeout: timeout,
 	}
 
+	// While holding the lock, we know the channel is open because:
+	// 1. running is true (checked above)
+	// 2. Stop() acquires the same lock before closing the channel
 	select {
 	case d.queue <- task:
 		d.enqueued.Add(1)

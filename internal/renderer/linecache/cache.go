@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dshills/keystorm/internal/renderer/core"
@@ -104,10 +105,10 @@ type Cache struct {
 	// Cache versioning
 	version uint64
 
-	// Stats
-	hits      uint64
-	misses    uint64
-	evictions uint64
+	// Stats (atomic for thread-safe access without holding locks)
+	hits      atomic.Uint64
+	misses    atomic.Uint64
+	evictions atomic.Uint64
 }
 
 // New creates a new line cache.
@@ -181,7 +182,7 @@ func (c *Cache) GetLine(line uint32, text string) *CachedLine {
 			if entry, ok := c.entries[line]; ok {
 				if entry.ContentHash == contentHash && entry.Version == c.version && !entry.LayoutOnly {
 					entry.LastAccess = time.Now()
-					c.hits++
+					c.hits.Add(1)
 					c.mu.Unlock()
 					return entry
 				}
@@ -219,12 +220,12 @@ func (c *Cache) GetLine(line uint32, text string) *CachedLine {
 	if entry, ok := c.entries[line]; ok {
 		if entry.ContentHash == contentHash && entry.Version == version && !entry.LayoutOnly {
 			entry.LastAccess = time.Now()
-			c.hits++
+			c.hits.Add(1)
 			return entry
 		}
 	}
 
-	c.misses++
+	c.misses.Add(1)
 
 	// Create cache entry
 	entry := &CachedLine{
@@ -473,7 +474,7 @@ func (c *Cache) evictIfNeeded() {
 	for i := 0; i < toEvict; i++ {
 		delete(c.entries, entries[i].line)
 	}
-	c.evictions += uint64(toEvict)
+	c.evictions.Add(uint64(toEvict))
 }
 
 // IsDirty returns true if any lines need redrawing.
@@ -525,21 +526,27 @@ func (c *Cache) NeedsFullRedraw() bool {
 
 // Stats returns cache statistics.
 func (c *Cache) Stats() CacheStats {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	// Load atomic counters first (no lock needed for atomics)
+	hits := c.hits.Load()
+	misses := c.misses.Load()
+	evictions := c.evictions.Load()
 
-	total := c.hits + c.misses
+	total := hits + misses
 	var hitRate float64
 	if total > 0 {
-		hitRate = float64(c.hits) / float64(total)
+		hitRate = float64(hits) / float64(total)
 	}
+
+	// Lock only for non-atomic fields
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return CacheStats{
 		Size:             len(c.entries),
 		MaxSize:          c.config.MaxCachedLines,
-		Hits:             c.hits,
-		Misses:           c.misses,
-		Evictions:        c.evictions,
+		Hits:             hits,
+		Misses:           misses,
+		Evictions:        evictions,
 		HitRate:          hitRate,
 		Version:          c.version,
 		LayoutCacheStats: c.layoutCache.Stats(),

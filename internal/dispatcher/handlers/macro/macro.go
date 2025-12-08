@@ -2,6 +2,8 @@
 package macro
 
 import (
+	"sync"
+
 	"github.com/dshills/keystorm/internal/dispatcher/execctx"
 	"github.com/dshills/keystorm/internal/dispatcher/handler"
 	"github.com/dshills/keystorm/internal/input"
@@ -362,7 +364,9 @@ func itoa(n int) string {
 }
 
 // DefaultMacroRecorder is a simple in-memory macro recorder.
+// It is thread-safe for concurrent access.
 type DefaultMacroRecorder struct {
+	mu           sync.RWMutex
 	macros       map[rune]*Macro
 	recording    bool
 	current      rune
@@ -379,6 +383,8 @@ func NewDefaultMacroRecorder() *DefaultMacroRecorder {
 
 // StartRecording begins recording to the specified register.
 func (r *DefaultMacroRecorder) StartRecording(register rune) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.recording = true
 	r.current = register
 	r.currentMacro = &Macro{
@@ -390,6 +396,8 @@ func (r *DefaultMacroRecorder) StartRecording(register rune) error {
 
 // StopRecording stops the current recording.
 func (r *DefaultMacroRecorder) StopRecording() (*Macro, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.recording {
 		return nil, nil
 	}
@@ -405,16 +413,22 @@ func (r *DefaultMacroRecorder) StopRecording() (*Macro, error) {
 
 // IsRecording returns true if currently recording.
 func (r *DefaultMacroRecorder) IsRecording() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.recording
 }
 
 // CurrentRegister returns the register being recorded to.
 func (r *DefaultMacroRecorder) CurrentRegister() rune {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.current
 }
 
 // RecordAction adds an action to the current recording.
 func (r *DefaultMacroRecorder) RecordAction(action RecordedAction) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.recording || r.currentMacro == nil {
 		return nil
 	}
@@ -424,28 +438,38 @@ func (r *DefaultMacroRecorder) RecordAction(action RecordedAction) error {
 
 // GetMacro returns the macro for a register.
 func (r *DefaultMacroRecorder) GetMacro(register rune) *Macro {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.macros[register]
 }
 
 // SetMacro sets the macro for a register.
 func (r *DefaultMacroRecorder) SetMacro(register rune, macro *Macro) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.macros[register] = macro
 }
 
 // ClearMacro clears the macro for a register.
 func (r *DefaultMacroRecorder) ClearMacro(register rune) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.macros, register)
 }
 
 // ClearAll clears all macros.
 func (r *DefaultMacroRecorder) ClearAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.macros = make(map[rune]*Macro)
 	r.lastPlayed = 0
 }
 
 // ListMacros returns all register names with macros.
 func (r *DefaultMacroRecorder) ListMacros() []rune {
-	var registers []rune
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	registers := make([]rune, 0, len(r.macros))
 	for reg := range r.macros {
 		registers = append(registers, reg)
 	}
@@ -454,10 +478,14 @@ func (r *DefaultMacroRecorder) ListMacros() []rune {
 
 // LastPlayedRegister returns the last played register.
 func (r *DefaultMacroRecorder) LastPlayedRegister() rune {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.lastPlayed
 }
 
 // SetLastPlayedRegister sets the last played register.
 func (r *DefaultMacroRecorder) SetLastPlayedRegister(register rune) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.lastPlayed = register
 }

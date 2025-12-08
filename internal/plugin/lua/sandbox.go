@@ -2,6 +2,7 @@ package lua
 
 import (
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,7 +17,8 @@ type Sandbox struct {
 	instructionLimit int64
 	instructionCount int64
 
-	// Capabilities
+	// Capabilities (protected by capMu for thread-safe access)
+	capMu        sync.RWMutex
 	capabilities map[Capability]bool
 }
 
@@ -153,7 +155,7 @@ func (s *Sandbox) installSafeRequire() {
 		// Check for capability-gated modules
 		switch modName {
 		case "io":
-			if !s.capabilities[CapabilityFileRead] && !s.capabilities[CapabilityFileWrite] {
+			if !s.HasCapability(CapabilityFileRead) && !s.HasCapability(CapabilityFileWrite) {
 				L.RaiseError("module 'io' requires filesystem capability")
 			}
 			// SECURITY: Return our sandboxed io module instead of the full
@@ -162,7 +164,7 @@ func (s *Sandbox) installSafeRequire() {
 			ioModule := L.GetGlobal("io")
 			if ioModule == lua.LNil {
 				// If not yet injected, inject based on capability
-				if s.capabilities[CapabilityFileWrite] {
+				if s.HasCapability(CapabilityFileWrite) {
 					s.injectFileWriteAPI()
 				} else {
 					s.injectFileReadAPI()
@@ -172,7 +174,7 @@ func (s *Sandbox) installSafeRequire() {
 			L.Push(ioModule)
 			return 1
 		case "os":
-			if !s.capabilities[CapabilityShell] && !s.capabilities[CapabilityProcess] {
+			if !s.HasCapability(CapabilityShell) && !s.HasCapability(CapabilityProcess) {
 				L.RaiseError("module 'os' requires shell or process capability")
 			}
 			// SECURITY: Do NOT use originalRequire here - it would load the full
@@ -188,7 +190,7 @@ func (s *Sandbox) installSafeRequire() {
 			L.Push(osModule)
 			return 1
 		case "debug":
-			if !s.capabilities[CapabilityUnsafe] {
+			if !s.HasCapability(CapabilityUnsafe) {
 				L.RaiseError("module 'debug' requires unsafe capability")
 			}
 			L.Push(originalRequire)
@@ -226,9 +228,13 @@ func (s *Sandbox) IncrementInstructions(n int64) bool {
 
 // Grant enables a capability.
 func (s *Sandbox) Grant(cap Capability) {
+	s.capMu.Lock()
 	s.capabilities[cap] = true
+	s.capMu.Unlock()
 
 	// Inject corresponding modules based on capability
+	// Note: These inject* methods don't need the lock as they only
+	// interact with the Lua state which has its own synchronization.
 	switch cap {
 	case CapabilityFileRead:
 		s.injectFileReadAPI()
@@ -245,18 +251,24 @@ func (s *Sandbox) Grant(cap Capability) {
 
 // Revoke disables a capability.
 func (s *Sandbox) Revoke(cap Capability) {
+	s.capMu.Lock()
 	delete(s.capabilities, cap)
+	s.capMu.Unlock()
 	// Note: Already injected APIs are not removed
 	// A full reset would be needed for that
 }
 
 // HasCapability returns true if the capability is granted.
 func (s *Sandbox) HasCapability(cap Capability) bool {
+	s.capMu.RLock()
+	defer s.capMu.RUnlock()
 	return s.capabilities[cap]
 }
 
 // Capabilities returns all granted capabilities.
 func (s *Sandbox) Capabilities() []Capability {
+	s.capMu.RLock()
+	defer s.capMu.RUnlock()
 	caps := make([]Capability, 0, len(s.capabilities))
 	for cap, granted := range s.capabilities {
 		if granted {
@@ -611,7 +623,10 @@ func (s *Sandbox) injectUnsafeLibraries() {
 
 // CheckCapability returns an error if the capability is not granted.
 func (s *Sandbox) CheckCapability(cap Capability) error {
-	if !s.capabilities[cap] {
+	s.capMu.RLock()
+	granted := s.capabilities[cap]
+	s.capMu.RUnlock()
+	if !granted {
 		return &CapabilityError{Capability: cap}
 	}
 	return nil

@@ -650,6 +650,54 @@ func TestAsyncDispatcher_ConcurrentEnqueue(t *testing.T) {
 	}
 }
 
+// TestAsyncDispatcher_ConcurrentStopEnqueue tests that Stop and Enqueue
+// can be called concurrently without causing a panic (send on closed channel).
+func TestAsyncDispatcher_ConcurrentStopEnqueue(t *testing.T) {
+	// Run multiple iterations to increase chance of hitting the race
+	for iteration := 0; iteration < 100; iteration++ {
+		d := NewAsyncDispatcher(
+			WithQueueSize(100),
+			WithWorkerCount(4),
+		)
+		d.Start()
+
+		handler := newTestHandler(func(ctx context.Context, event any) error {
+			return nil
+		})
+
+		// Start enqueuers
+		var enqueueWg sync.WaitGroup
+		stopEnqueue := make(chan struct{})
+		for i := 0; i < 5; i++ {
+			enqueueWg.Add(1)
+			go func() {
+				defer enqueueWg.Done()
+				for {
+					select {
+					case <-stopEnqueue:
+						return
+					default:
+						// Ignore errors - we expect ErrNotRunning after Stop
+						_ = d.Enqueue(context.Background(), "event", handler)
+					}
+				}
+			}()
+		}
+
+		// Let enqueuers run briefly
+		time.Sleep(time.Millisecond)
+
+		// Stop the dispatcher (should not panic even with concurrent enqueues)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		_ = d.Stop(ctx)
+		cancel()
+
+		// Signal enqueuers to stop
+		close(stopEnqueue)
+		enqueueWg.Wait()
+	}
+}
+
 func BenchmarkAsyncDispatcher_Enqueue(b *testing.B) {
 	d := NewAsyncDispatcher(
 		WithQueueSize(100000),
