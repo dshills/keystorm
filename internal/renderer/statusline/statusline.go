@@ -17,6 +17,9 @@ type StatusLine struct {
 	totalLines    uint32 // Total lines in buffer
 	percentScroll int    // Scroll percentage (0-100)
 
+	// LSP status
+	lspStatus LSPStatus // Current LSP server status
+
 	// Command line state
 	commandActive bool   // In command mode
 	commandPrompt rune   // Prompt character (usually ':')
@@ -34,6 +37,16 @@ type StatusLine struct {
 	width  int
 	height int // Usually 1, but can be 2 for command line
 }
+
+// LSPStatus represents the state of the LSP server.
+type LSPStatus int
+
+const (
+	LSPStatusNone     LSPStatus = iota // No LSP server
+	LSPStatusStarting                  // Server is starting
+	LSPStatusRunning                   // Server is running
+	LSPStatusError                     // Server has an error
+)
 
 // MessageType indicates the type of status message.
 type MessageType int
@@ -98,6 +111,11 @@ func (s *StatusLine) SetTotalLines(total uint32) {
 // SetScrollPercent updates the scroll percentage.
 func (s *StatusLine) SetScrollPercent(percent int) {
 	s.percentScroll = percent
+}
+
+// SetLSPStatus updates the LSP status indicator.
+func (s *StatusLine) SetLSPStatus(status LSPStatus) {
+	s.lspStatus = status
 }
 
 // SetCommandMode activates command line display.
@@ -189,6 +207,22 @@ func (s *StatusLine) renderStatusBar(b backend.Backend, row int) {
 		col++
 	}
 
+	// LSP status indicator
+	lspIndicator, lspStyle := s.lspIndicator()
+	if lspIndicator != "" {
+		for _, r := range lspIndicator {
+			if col < s.width {
+				b.SetCell(col, row, renderer.Cell{Rune: r, Width: 1, Style: lspStyle})
+				col++
+			}
+		}
+		// Separator space after LSP indicator
+		if col < s.width {
+			b.SetCell(col, row, renderer.Cell{Rune: ' ', Width: 1, Style: barStyle})
+			col++
+		}
+	}
+
 	// Filename (or [No Name])
 	filename := s.filename
 	if filename == "" {
@@ -211,6 +245,20 @@ func (s *StatusLine) renderStatusBar(b backend.Backend, row int) {
 		for i, r := range posInfo {
 			b.SetCell(posStart+i, row, renderer.Cell{Rune: r, Width: 1, Style: barStyle})
 		}
+	}
+}
+
+// lspIndicator returns the LSP status indicator text and style.
+func (s *StatusLine) lspIndicator() (string, renderer.Style) {
+	switch s.lspStatus {
+	case LSPStatusStarting:
+		return "[LSP...]", renderer.DefaultStyle().WithBackground(renderer.ColorGray).WithForeground(renderer.ColorYellow)
+	case LSPStatusRunning:
+		return "[LSP]", renderer.DefaultStyle().WithBackground(renderer.ColorGray).WithForeground(renderer.ColorGreen)
+	case LSPStatusError:
+		return "[LSP!]", renderer.DefaultStyle().WithBackground(renderer.ColorGray).WithForeground(renderer.ColorRed)
+	default:
+		return "", renderer.DefaultStyle()
 	}
 }
 

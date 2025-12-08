@@ -4,9 +4,11 @@ package app
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/dshills/keystorm/internal/event"
 	"github.com/dshills/keystorm/internal/event/topic"
+	"github.com/dshills/keystorm/internal/lsp"
 )
 
 // Event topics used throughout the application.
@@ -226,7 +228,7 @@ func (sm *subscriptionManager) handleBufferChangeForRenderer(_ context.Context, 
 
 // handleBufferChangeForLSP syncs document changes with LSP.
 func (sm *subscriptionManager) handleBufferChangeForLSP(ctx context.Context, ev any) error {
-	if sm.app.lsp == nil {
+	if sm.app.lspClient == nil {
 		return nil
 	}
 
@@ -235,25 +237,65 @@ func (sm *subscriptionManager) handleBufferChangeForLSP(ctx context.Context, ev 
 		return nil
 	}
 
-	// Try to extract incremental changes from event payload
-	// If we have a BufferChangePayload, we can send incremental changes
-	// Otherwise fall back to full document sync
-	if payload, ok := ev.(event.Event[BufferChangePayload]); ok {
-		change := payload.Payload
-		// Create incremental change event for LSP
-		// This would use the LSP's ChangeDocument with TextDocumentContentChangeEvent
-		// For now, we note this is where incremental sync would happen
-		_ = change
-	}
-
-	// For full document sync, we would need to close and reopen the document
-	// or implement a full-content ChangeDocument variant
-	// The current LSP API expects incremental changes
-
 	// Mark document as modified
 	doc.SetModified(true)
+	doc.IncrementVersion()
+
+	// Try to extract incremental changes from event payload
+	// If we have a BufferChangePayload, we can send incremental changes
+	if payload, ok := ev.(event.Event[BufferChangePayload]); ok {
+		change := payload.Payload
+		if change.Path == doc.Path {
+			// Build LSP content change event with range information
+			lspChange := lsp.TextDocumentContentChangeEvent{
+				Range: &lsp.Range{
+					Start: sm.offsetToPosition(doc, change.StartOffset),
+					End:   sm.offsetToPosition(doc, change.EndOffset),
+				},
+				Text: change.Text,
+			}
+
+			// Use a short timeout for LSP notifications
+			lspCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+
+			// Send incremental change to LSP
+			if err := sm.app.lspClient.ChangeDocument(lspCtx, doc.Path, []lsp.TextDocumentContentChangeEvent{lspChange}); err != nil {
+				// Non-fatal, just log and continue
+				_ = err
+			}
+			return nil
+		}
+	}
+
+	// Fall back to full document sync for events without detailed change info
+	fullChange := lsp.TextDocumentContentChangeEvent{
+		Text: doc.Content(),
+	}
+
+	lspCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	if err := sm.app.lspClient.ChangeDocument(lspCtx, doc.Path, []lsp.TextDocumentContentChangeEvent{fullChange}); err != nil {
+		// Non-fatal, just log and continue
+		_ = err
+	}
 
 	return nil
+}
+
+// offsetToPosition converts a byte offset to an LSP Position.
+func (sm *subscriptionManager) offsetToPosition(doc *Document, offset int) lsp.Position {
+	if doc == nil || doc.Engine == nil {
+		return lsp.Position{}
+	}
+
+	// Use the engine to convert byte offset to line/column
+	point := doc.Engine.OffsetToPoint(int64(offset))
+	return lsp.Position{
+		Line:      int(point.Line),
+		Character: int(point.Column),
+	}
 }
 
 // handleConfigChange handles configuration change events.

@@ -12,6 +12,7 @@ import (
 	viewhandler "github.com/dshills/keystorm/internal/dispatcher/handlers/view"
 	windowhandler "github.com/dshills/keystorm/internal/dispatcher/handlers/window"
 	"github.com/dshills/keystorm/internal/input"
+	"github.com/dshills/keystorm/internal/lsp"
 )
 
 // RegisterHandlers registers all standard handlers with the dispatcher.
@@ -33,6 +34,15 @@ func RegisterHandlers(d *dispatcher.Dispatcher) {
 	d.RegisterNamespace("search", searchhandler.NewHandler())
 	d.RegisterNamespace("view", viewhandler.NewHandler())
 	d.RegisterNamespace("window", windowhandler.NewHandler())
+}
+
+// RegisterLSPHandler registers the LSP handler with the dispatcher.
+// This should be called after the LSP client is initialized.
+func RegisterLSPHandler(d *dispatcher.Dispatcher, client *lsp.Client) {
+	if d == nil || client == nil {
+		return
+	}
+	d.RegisterNamespace("lsp", lsp.NewHandler(lsp.WithLSPClient(client)))
 }
 
 // BuildExecutionContext creates an execctx.ExecutionContext from the application state.

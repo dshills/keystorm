@@ -199,23 +199,30 @@ func (b *bootstrapper) initProject() error {
 	return nil
 }
 
-// initLSP initializes the LSP manager.
+// initLSP initializes the LSP client.
 func (b *bootstrapper) initLSP() error {
-	b.app.lsp = lsp.NewManager(
-		lsp.WithRequestTimeout(10*time.Second),
-		lsp.WithSupervision(lsp.DefaultSupervisorConfig()),
-	)
-
-	// Register default language servers based on detection
-	for lang, cfg := range lsp.AutoDetectServers() {
-		b.app.lsp.RegisterServer(lang, cfg)
+	// Build client options
+	clientOpts := []lsp.ClientOption{
+		lsp.WithClientRequestTimeout(10 * time.Second),
+		lsp.WithAutoDetectServers(true),
 	}
 
 	// Set workspace folders if project is open
 	if b.app.project != nil {
 		folders := lsp.DetectWorkspaceFolders(b.app.project.Root())
-		b.app.lsp.SetWorkspaceFolders(folders)
+		clientOpts = append(clientOpts, lsp.WithWorkspaceFolders(folders))
 	}
+
+	// Create LSP client
+	b.app.lspClient = lsp.NewClient(clientOpts...)
+
+	// Register detected servers
+	for lang, cfg := range lsp.AutoDetectServers() {
+		b.app.lspClient.RegisterServer(lang, cfg)
+	}
+
+	// Register LSP handler with dispatcher
+	RegisterLSPHandler(b.app.dispatcher, b.app.lspClient)
 
 	b.initOrder = append(b.initOrder, "lsp")
 	return nil
@@ -307,9 +314,9 @@ func (b *bootstrapper) cleanupComponent(ctx context.Context, component string) {
 			b.app.project = nil
 		}
 	case "lsp":
-		if b.app.lsp != nil {
-			b.app.lsp.Shutdown(ctx)
-			b.app.lsp = nil
+		if b.app.lspClient != nil {
+			b.app.lspClient.Shutdown(ctx)
+			b.app.lspClient = nil
 		}
 	case "plugins":
 		if b.app.plugins != nil {
@@ -388,4 +395,5 @@ func (app *Application) SwitchDocument(doc *Document) {
 
 	app.documents.SetActive(doc)
 	app.WireDispatcher()
+	app.updateHighlighting()
 }

@@ -5,6 +5,7 @@ package app
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/dshills/keystorm/internal/project"
 	"github.com/dshills/keystorm/internal/renderer"
 	"github.com/dshills/keystorm/internal/renderer/backend"
+	"github.com/dshills/keystorm/internal/renderer/highlight"
 	"github.com/dshills/keystorm/internal/renderer/statusline"
 )
 
@@ -33,18 +35,20 @@ type Application struct {
 	config   *config.Config
 
 	// Editor components
-	renderer    *renderer.Renderer
-	backend     backend.Backend
-	statusLine  *statusline.StatusLine
-	modeManager *mode.Manager
-	dispatcher  *dispatcher.Dispatcher
+	renderer          *renderer.Renderer
+	backend           backend.Backend
+	statusLine        *statusline.StatusLine
+	modeManager       *mode.Manager
+	dispatcher        *dispatcher.Dispatcher
+	highlightRegistry *highlight.Registry
+	highlightProvider *highlight.Provider
 
 	// Document management
 	documents *DocumentManager
 
 	// Workspace components
-	project project.Project
-	lsp     *lsp.Manager
+	project   project.Project
+	lspClient *lsp.Client
 
 	// Extension components
 	plugins     *plugin.Manager
@@ -161,6 +165,9 @@ func (app *Application) Run() error {
 		if doc := app.documents.Active(); doc != nil {
 			app.renderer.SetBuffer(doc.Engine)
 		}
+
+		// Initialize syntax highlighting
+		app.initHighlighting()
 	}
 
 	// Wire dispatcher to active document
@@ -293,12 +300,45 @@ func (app *Application) updateStatusLine() {
 		// Get cursor position if available
 		// For now, default to 1,1 - would need CursorProvider to be set
 		app.statusLine.SetPosition(1, 1)
+
+		// Update LSP status for current document's language
+		app.updateLSPStatus(doc)
 	}
 
 	// Update renderer's reserved space if status line height changed
 	newHeight := app.statusLine.Height()
 	if newHeight != oldHeight && app.renderer != nil {
 		app.renderer.SetReservedBottom(newHeight)
+	}
+}
+
+// updateLSPStatus updates the LSP status indicator based on the current document.
+func (app *Application) updateLSPStatus(doc *Document) {
+	if app.statusLine == nil || app.lspClient == nil {
+		app.statusLine.SetLSPStatus(statusline.LSPStatusNone)
+		return
+	}
+
+	// Detect language from file path
+	languageID := lsp.DetectLanguageID(doc.Path)
+	if languageID == "" {
+		app.statusLine.SetLSPStatus(statusline.LSPStatusNone)
+		return
+	}
+
+	// Get server status for this language
+	serverStatus := app.lspClient.ServerStatus(languageID)
+
+	// Map LSP server status to status line status
+	switch serverStatus {
+	case lsp.ServerStatusReady:
+		app.statusLine.SetLSPStatus(statusline.LSPStatusRunning)
+	case lsp.ServerStatusStarting, lsp.ServerStatusInitializing:
+		app.statusLine.SetLSPStatus(statusline.LSPStatusStarting)
+	case lsp.ServerStatusError:
+		app.statusLine.SetLSPStatus(statusline.LSPStatusError)
+	default:
+		app.statusLine.SetLSPStatus(statusline.LSPStatusNone)
 	}
 }
 
@@ -315,6 +355,55 @@ func (app *Application) renderStatusLine() {
 
 	// Need to call Show() to flush the status line to screen
 	app.backend.Show()
+}
+
+// initHighlighting initializes the syntax highlighting system.
+func (app *Application) initHighlighting() {
+	// Create registry and register built-in highlighters
+	app.highlightRegistry = highlight.NewRegistry()
+	highlight.RegisterBuiltinHighlighters(app.highlightRegistry)
+
+	// Create provider with default theme
+	app.highlightProvider = highlight.NewProvider(nil, 1000)
+
+	// Wire to active document
+	app.updateHighlighting()
+
+	// Set provider on renderer
+	if app.renderer != nil {
+		app.renderer.SetHighlightProvider(app.highlightProvider)
+	}
+}
+
+// updateHighlighting updates the highlight provider for the current document.
+func (app *Application) updateHighlighting() {
+	if app.highlightProvider == nil || app.highlightRegistry == nil {
+		return
+	}
+
+	doc := app.documents.Active()
+	if doc == nil || doc.Engine == nil {
+		return
+	}
+
+	// Get file extension
+	ext := filepath.Ext(doc.Path)
+	if ext == "" {
+		return
+	}
+
+	// Find highlighter for this extension
+	if h, ok := app.highlightRegistry.GetByExtension(ext); ok {
+		app.highlightProvider.SetHighlighter(h)
+	}
+
+	// Set line getter to fetch from current document
+	app.highlightProvider.SetLineGetter(func(line uint32) string {
+		if doc.Engine == nil {
+			return ""
+		}
+		return doc.Engine.LineText(line)
+	})
 }
 
 // Shutdown initiates graceful shutdown.
@@ -357,11 +446,11 @@ func (app *Application) shutdown() {
 	}
 
 	// 3. Stop LSP
-	if app.lsp != nil {
+	if app.lspClient != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			app.lsp.Shutdown(ctx)
+			app.lspClient.Shutdown(ctx)
 		}()
 	}
 
@@ -443,9 +532,9 @@ func (app *Application) Project() project.Project {
 	return app.project
 }
 
-// LSP returns the LSP manager.
-func (app *Application) LSP() *lsp.Manager {
-	return app.lsp
+// LSPClient returns the LSP client (may be nil).
+func (app *Application) LSPClient() *lsp.Client {
+	return app.lspClient
 }
 
 // Plugins returns the plugin manager (may be nil).

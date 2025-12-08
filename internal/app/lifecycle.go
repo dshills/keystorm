@@ -74,10 +74,10 @@ func (app *Application) CloseDocument(doc *Document, force bool) error {
 	}
 
 	// Close LSP document if needed
-	if doc.IsLSPOpened() && app.lsp != nil {
+	if doc.IsLSPOpened() && app.lspClient != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		app.lsp.CloseDocument(ctx, doc.Path)
+		app.lspClient.CloseDocument(ctx, doc.Path)
 	}
 
 	// Remove from document manager
@@ -115,12 +115,12 @@ func (app *Application) OpenFile(path string) (*Document, error) {
 	}
 
 	// Notify LSP if available
-	if app.lsp != nil {
+	if app.lspClient != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
 		// OpenDocument takes (ctx, path, content) - languageID is detected internally
-		if err := app.lsp.OpenDocument(ctx, doc.Path, doc.Content()); err != nil {
+		if err := app.lspClient.OpenDocument(ctx, doc.Path, doc.Content()); err != nil {
 			// Non-fatal, continue without LSP
 			_ = err
 		} else {
